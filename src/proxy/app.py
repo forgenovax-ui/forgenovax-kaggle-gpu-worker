@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import hmac
+import json
+from pathlib import Path
 from typing import AsyncIterator
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from src.config import Settings
+from src.proxy.public_metrics import sanitize_public_metrics
 
 
 SERVICE_NAME = "forgenovax-kaggle-ai"
@@ -93,6 +96,41 @@ def create_app(
     @application.get("/healthz")
     async def healthz() -> dict[str, object]:
         return {"ok": True, "service": SERVICE_NAME}
+
+    @application.get("/fnx/live/metrics")
+    async def public_live_metrics() -> JSONResponse:
+        metrics_path = Path(runtime_settings.public_metrics_path)
+        kill_switch_path = Path(runtime_settings.public_metrics_kill_switch_path)
+        headers = {
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+        }
+        if not runtime_settings.public_metrics_path:
+            return JSONResponse(
+                {"status": "TELEMETRY_UNAVAILABLE"},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers=headers,
+            )
+        if runtime_settings.public_metrics_kill_switch_path and kill_switch_path.exists():
+            return JSONResponse(
+                {"status": "PUBLIC_TELEMETRY_DISABLED"},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers=headers,
+            )
+        try:
+            sanitized = sanitize_public_metrics(
+                json.loads(metrics_path.read_text(encoding="utf-8"))
+            )
+        except (OSError, json.JSONDecodeError):
+            sanitized = {}
+        if not sanitized or sanitized.get("experiment_id") != "FNX-R002":
+            return JSONResponse(
+                {"status": "TELEMETRY_UNAVAILABLE"},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers=headers,
+            )
+        return JSONResponse(sanitized, headers=headers)
 
     @application.api_route(
         "/v1/{api_path:path}",

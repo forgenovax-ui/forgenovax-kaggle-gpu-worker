@@ -38,6 +38,8 @@ class Settings:
     proxy_port: int = 8000
     api_key: str = ""
     upstream_timeout_seconds: float = 900.0
+    public_metrics_path: str = ""
+    public_metrics_kill_switch_path: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -58,6 +60,10 @@ class Settings:
             proxy_port=_positive_int("PROXY_PORT", 8000),
             api_key=os.getenv("FORGENOVAX_API_KEY", ""),
             upstream_timeout_seconds=float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "900")),
+            public_metrics_path=os.getenv("FNX_PUBLIC_METRICS_PATH", "").strip(),
+            public_metrics_kill_switch_path=os.getenv(
+                "FNX_PUBLIC_METRICS_KILL_SWITCH_PATH", ""
+            ).strip(),
         )
 
     @property

@@ -22,6 +22,18 @@ if [[ -z "${FORGENOVAX_API_KEY:-}" ]]; then
   exit 1
 fi
 
+if [[ -f "${PID_FILE}" && -f "${URL_FILE}" ]]; then
+  existing_pid="$(tr -dc '0-9' <"${PID_FILE}")"
+  existing_url="$(head -n 1 "${URL_FILE}")"
+  if [[ -n "${existing_pid}" ]] \
+    && kill -0 "${existing_pid}" 2>/dev/null \
+    && [[ "${existing_url}" =~ ^https://[-a-z0-9]+\.trycloudflare\.com$ ]] \
+    && curl -fsS --max-time 10 "${existing_url}/healthz" >/dev/null 2>&1; then
+    echo "Cloudflare Quick Tunnel is already ready: ${existing_url} (PID ${existing_pid})"
+    exit 0
+  fi
+fi
+
 listener_output=""
 if command -v ss >/dev/null 2>&1; then
   listener_output="$(ss -ltnp 2>/dev/null | awk '$4 ~ /:11434$/ {print $4}')"

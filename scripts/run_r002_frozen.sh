@@ -14,6 +14,10 @@ decider_revision="c4daaac28af9fea95d627015cffa2dd5a5926ee6"
 model="${MODEL:-qwen3-coder:30b}"
 live_boundary_file="${FNX_R002_LIVE_BOUNDARY_FILE:-}"
 not_before="${FNX_R002_NOT_BEFORE:-2026-09-22T09:00:00-04:00}"
+reuse_preexperiment="${FNX_R002_REUSE_PREEXPERIMENT:-false}"
+preflight_only="${FNX_R002_PREFLIGHT_ONLY:-false}"
+export FNX_PUBLIC_METRICS_PATH="${FNX_PUBLIC_METRICS_PATH:-$artifact_dir/live/metrics.json}"
+export FNX_PUBLIC_METRICS_KILL_SWITCH_PATH="${FNX_PUBLIC_METRICS_KILL_SWITCH_PATH:-$artifact_dir/live/PUBLIC_DISABLED}"
 
 gpu_inventory() {
   nvidia-smi \
@@ -157,15 +161,46 @@ run_reflex_pre() {
       --artifact-dir "$artifact_dir" \
       --decider-source "$decider_dir" \
       --source-revision "$decider_revision"
-  python - "$artifact_dir/preexperiment-readiness.json" <<'PY'
+  require_preexperiment_ready
+}
+
+require_preexperiment_ready() {
+  python - "$artifact_dir/preexperiment-readiness.json" "$artifact_dir/calibration.json" "$artifact_dir/fan.json" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+readiness, calibration, fan = map(Path, sys.argv[1:])
+payload = json.loads(readiness.read_text(encoding="utf-8"))
 if payload.get("status") != "READY" or payload.get("heldout_accessed") is not False:
     raise SystemExit("FNX-R002 pre-experiment gate failed")
+if not calibration.is_file() or not fan.is_file():
+    raise SystemExit("FNX-R002 pre-experiment artifacts are incomplete")
 print("FNX-R002 PRE-EXPERIMENT: READY")
+PY
+}
+
+publish_preparing_state() {
+  python - "$FNX_PUBLIC_METRICS_PATH" <<'PY'
+import json
+import os
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = {
+    "experiment_id": "FNX-R002",
+    "model": "FNX-1 Reflex",
+    "status": "PREPARING",
+    "dry_run": False,
+    "updated_at": datetime.now(UTC).isoformat(),
+    "production_status": "NOT_PRODUCTION_CERTIFIED",
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+temporary = path.with_suffix(path.suffix + ".tmp")
+temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+os.replace(temporary, path)
 PY
 }
 
@@ -188,7 +223,7 @@ authorize_heldout() {
 }
 
 run_reflex_final() {
-  "$script_dir/shutdown.sh"
+  "$script_dir/stop_ollama.sh"
   require_idle_gpus
   CUDA_VISIBLE_DEVICES=0 HF_HOME="$work_dir/huggingface-r002" \
     PYTHONPATH="$source_dir/src" python "$source_dir/scripts/run_r002_experiment.py" \
@@ -214,7 +249,22 @@ main() {
   require_t4_x2 >/dev/null
   prepare_source
   prepare_decider
-  run_reflex_pre
+  if [[ "$reuse_preexperiment" == "true" ]]; then
+    require_preexperiment_ready
+  elif [[ "$reuse_preexperiment" == "false" ]]; then
+    run_reflex_pre
+  else
+    echo "FNX_R002_REUSE_PREEXPERIMENT must be true or false" >&2
+    exit 64
+  fi
+  publish_preparing_state
+  if [[ "$preflight_only" == "true" ]]; then
+    echo "FNX-R002 PREFLIGHT ONLY: COMPLETE"
+    exit 0
+  elif [[ "$preflight_only" != "false" ]]; then
+    echo "FNX_R002_PREFLIGHT_ONLY must be true or false" >&2
+    exit 64
+  fi
   authorize_heldout
   run_strong_final
   run_reflex_final
