@@ -268,13 +268,90 @@ run_optional_adaptation() (
 
 persist_artifacts() {
   local archive="$work_dir/FNX-R002-private-artifacts.tar.gz"
+  local manifest="$work_dir/FNX-R002-private-artifacts.manifest.json"
   tar -czf "$archive" \
     -C "$artifact_dir" . \
     -C "$source_dir" reports docs/R002_PLAN.md docs/R002_PREEXPERIMENT_READINESS.md \
       docs/R002_COVERAGE_CURVE.md docs/R002_RESULTS.md \
       datasets/manifests/fnx-core-002.json \
       datasets/manifests/fnx-core-002-contamination.json
-  sha256sum "$archive"
+  python3 - "$archive" "$manifest" "$worker_dir" "$artifact_dir" "$source_dir" <<'PY'
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+archive, manifest, worker_dir, artifact_dir, source_dir = map(Path, sys.argv[1:])
+
+
+def read_object(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+digest = hashlib.sha256()
+with archive.open("rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+worker_sha = subprocess.run(
+    ["git", "rev-parse", "HEAD"],
+    cwd=worker_dir,
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.strip()
+worker_tags = subprocess.run(
+    ["git", "tag", "--points-at", "HEAD"],
+    cwd=worker_dir,
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.splitlines()
+source = read_object(artifact_dir / "source-provenance.json")
+boundary = read_object(artifact_dir / "live-boundary.json")
+results = read_object(source_dir / "reports" / "R002_RESULTS.json")
+payload = {
+    "experiment_id": "FNX-R002",
+    "archive_name": archive.name,
+    "archive_bytes": archive.stat().st_size,
+    "archive_sha256": digest.hexdigest(),
+    "worker_git_sha": worker_sha,
+    "worker_git_tags": sorted(worker_tags),
+    "source_git_sha": source.get("source_git_sha", "NOT_RECORDED"),
+    "source_tree_sha256": source.get("source_tree_sha256", "NOT_RECORDED"),
+    "source_archive_sha256": source.get("source_archive_sha256", "NOT_RECORDED"),
+    "held_out_accessed": boundary.get("held_out_accessed") is True,
+    "technical_status": results.get("technical_status", "FAIL"),
+    "r002_status": results.get("r002_status", "NO_WINNER"),
+    "production_status": "NOT_PRODUCTION_CERTIFIED",
+    "created_at": datetime.now(UTC).isoformat(),
+}
+temporary = manifest.with_suffix(manifest.suffix + ".tmp")
+descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+os.replace(temporary, manifest)
+manifest.chmod(0o600)
+print(
+    "FNX_R002_PRIVATE_ARCHIVE="
+    + json.dumps(
+        {
+            "archive": archive.name,
+            "bytes": payload["archive_bytes"],
+            "sha256": payload["archive_sha256"],
+            "manifest": manifest.name,
+        },
+        sort_keys=True,
+    )
+)
+PY
 }
 
 record_post_boundary_failure() {
