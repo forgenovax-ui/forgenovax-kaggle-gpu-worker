@@ -22,6 +22,12 @@ The notebook automates this sequence and stops on the first failed gate.
 
 This checks the NVIDIA runtime and both GPU indices, Ollama API, model installation/loading, proxy, authentication rejection, authorized model listing, cloudflared process, public health, and the authenticated public API. Only all-live checks produce `OVERALL STATUS: READY`.
 
+For the heldout-safe FNX-R002 broadcast preflight, use
+`scripts/run_r002_live_preflight.sh`. It runs the frozen preflight-only path,
+restarts retained services so the proxy receives the authoritative metrics
+path, verifies the unauthenticated allowlisted public metrics route, and stops
+before creation or acceptance of any heldout boundary.
+
 ## Logs
 
 ```text
