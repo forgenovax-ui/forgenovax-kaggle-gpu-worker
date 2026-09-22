@@ -15,13 +15,16 @@ if [[ ! "$experiment_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
 fi
 
 "$script_dir/shutdown.sh"
+inference_processes_running() {
+  pgrep -f '[o]llama|[u]vicorn.*src\.proxy|[c]loudflared.*127\.0\.0\.1' >/dev/null
+}
 for _ in {1..30}; do
-  if ! pgrep -f 'ollama|uvicorn.*src.proxy|cloudflared.*127.0.0.1' >/dev/null; then
+  if ! inference_processes_running; then
     break
   fi
   sleep 1
 done
-if pgrep -f 'ollama|uvicorn.*src.proxy|cloudflared.*127.0.0.1' >/dev/null; then
+if inference_processes_running; then
   echo "Inference processes did not stop cleanly" >&2
   exit 1
 fi
@@ -68,4 +71,3 @@ python scripts/train.py \
   --experiment "$experiment_id" \
   --output "$work_dir/fnx-artifacts/$experiment_id" \
   --resume
-
