@@ -111,13 +111,16 @@ prepare_source() {
   test "$(source_tree_digest "$source_dir")" = "$source_tree_sha256"
   printf '%s  %s\n' "$source_tree_sha256" "$source_location"
   python -m pip install -q -e "${source_dir}[research]"
-  python -m pip install -q 'transformers==5.17.0' 'torchao==0.16.0'
+  python -m pip install -q 'transformers==5.17.0' 'torchao==0.16.0' 'peft==0.21.0'
   python - <<'PY'
+import peft
 import transformers
 
 if transformers.__version__ != "5.17.0":
     raise SystemExit(f"Transformers pin failed: {transformers.__version__}")
-print({"transformers": transformers.__version__})
+if peft.__version__ != "0.21.0":
+    raise SystemExit(f"PEFT pin failed: {peft.__version__}")
+print({"transformers": transformers.__version__, "peft": peft.__version__})
 PY
   python "$source_dir/scripts/validate_r002_data.py"
   python "$source_dir/scripts/verify_live_readiness.py"
@@ -233,6 +236,18 @@ run_reflex_final() {
       --source-revision "$decider_revision"
 }
 
+run_optional_adaptation() {
+  "$script_dir/stop_ollama.sh"
+  require_idle_gpus
+  CUDA_VISIBLE_DEVICES=0 HF_HOME="$work_dir/huggingface-r002" \
+    PYTHONPATH="$worker_dir:$source_dir/src:$decider_dir" \
+    python "$script_dir/run_r002_adaptation.py" \
+      --source-dir "$source_dir" \
+      --decider-dir "$decider_dir" \
+      --artifact-dir "$artifact_dir" \
+      --config "$worker_dir/configs/r002_adaptation.json"
+}
+
 persist_artifacts() {
   local archive="$work_dir/FNX-R002-private-artifacts.tar.gz"
   tar -czf "$archive" \
@@ -268,7 +283,12 @@ main() {
   authorize_heldout
   run_strong_final
   run_reflex_final
+  set +e
+  run_optional_adaptation
+  adaptation_status=$?
+  set -e
   persist_artifacts
+  return "$adaptation_status"
 }
 
 main "$@"
