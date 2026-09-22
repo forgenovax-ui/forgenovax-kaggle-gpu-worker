@@ -1,0 +1,1 @@
+"""Authenticated OpenAI-compatible proxy."""

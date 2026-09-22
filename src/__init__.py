@@ -1,0 +1,1 @@
+"""ForgeNovaX Kaggle GPU Worker."""

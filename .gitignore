@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+*.pid
+tunnel_url
+forgenovax_runtime.env
+.DS_Store
+.idea/
+.vscode/
