@@ -5,6 +5,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 worker_dir="$(cd -- "$script_dir/.." && pwd)"
 work_dir="${FORGENOVAX_WORK_DIR:-/kaggle/working}"
 source_sha256="${FNX_R002_SOURCE_SHA256:?FNX_R002_SOURCE_SHA256 is required}"
+source_tree_sha256="${FNX_R002_SOURCE_TREE_SHA256:?FNX_R002_SOURCE_TREE_SHA256 is required}"
 source_git_sha="${FNX_R002_SOURCE_GIT_SHA:?FNX_R002_SOURCE_GIT_SHA is required}"
 source_dir="${FNX_R002_SOURCE_DIR:-$work_dir/fnx-r002-src}"
 artifact_dir="${FNX_R002_ARTIFACT_DIR:-$work_dir/fnx-r002-artifacts}"
@@ -54,32 +55,74 @@ locate_source_archive() {
   return 1
 }
 
+source_tree_digest() {
+  python - "$1" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+rows = []
+for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file() and candidate.name != "pax_global_header"):
+    data = path.read_bytes()
+    relative = path.relative_to(root).as_posix()
+    rows.append(f"{relative}\0{len(data)}\0{hashlib.sha256(data).hexdigest()}\n")
+print(hashlib.sha256("".join(rows).encode()).hexdigest())
+PY
+}
+
+locate_source_tree() {
+  local marker candidate actual
+  while IFS= read -r marker; do
+    candidate="$(cd -- "$(dirname -- "$marker")/.." && pwd)"
+    actual="$(source_tree_digest "$candidate")"
+    if [[ "$actual" == "$source_tree_sha256" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(find /kaggle/input -type f -path '*/scripts/run_r002_experiment.py' -print | sort)
+  echo "No attached extracted R002 source tree matches the required SHA-256" >&2
+  return 1
+}
+
 prepare_source() {
-  local archive
-  archive="$(locate_source_archive)"
+  local archive mounted_source source_location
+  archive="$(locate_source_archive 2>/dev/null || true)"
   if [[ ! -f "$source_dir/scripts/run_r002_experiment.py" ]]; then
     mkdir -p "$source_dir"
-    tar -xzf "$archive" -C "$source_dir"
+    if [[ -n "$archive" ]]; then
+      tar -xzf "$archive" -C "$source_dir"
+      source_location="$archive"
+    else
+      mounted_source="$(locate_source_tree)"
+      cp -a "$mounted_source/." "$source_dir/"
+      rm -f "$source_dir/pax_global_header"
+      source_location="$mounted_source"
+    fi
+  else
+    source_location="$source_dir"
   fi
-  printf '%s  %s\n' "$source_sha256" "$archive"
+  test "$(source_tree_digest "$source_dir")" = "$source_tree_sha256"
+  printf '%s  %s\n' "$source_tree_sha256" "$source_location"
   python -m pip install -q -e "${source_dir}[research]"
-  python -m pip install -q 'torchao>=0.16,<1'
+  python -m pip install -q 'torchao==0.16.0'
   python "$source_dir/scripts/validate_r002_data.py"
   python "$source_dir/scripts/verify_live_readiness.py"
   python -m pytest -q "$source_dir/tests"
   mkdir -p "$artifact_dir"
-  python - "$artifact_dir/source-provenance.json" "$source_git_sha" "$source_sha256" "$archive" <<'PY'
+  python - "$artifact_dir/source-provenance.json" "$source_git_sha" "$source_sha256" "$source_tree_sha256" "$source_location" <<'PY'
 import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-path, git_sha, archive_sha, archive_path = sys.argv[1:]
+path, git_sha, archive_sha, tree_sha, source_path = sys.argv[1:]
 Path(path).write_text(json.dumps({
     "experiment_id": "FNX-R002",
     "source_git_sha": git_sha,
     "source_archive_sha256": archive_sha,
-    "source_archive_name": Path(archive_path).name,
+    "source_tree_sha256": tree_sha,
+    "source_location_name": Path(source_path).name,
     "verified_at": datetime.now(UTC).isoformat(),
     "production_status": "NOT_PRODUCTION_CERTIFIED",
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
