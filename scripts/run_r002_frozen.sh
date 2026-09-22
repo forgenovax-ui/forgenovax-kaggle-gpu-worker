@@ -316,6 +316,9 @@ worker_tags = subprocess.run(
 source = read_object(artifact_dir / "source-provenance.json")
 boundary = read_object(artifact_dir / "live-boundary.json")
 results = read_object(source_dir / "reports" / "R002_RESULTS.json")
+failure = read_object(artifact_dir / "failure-evidence.json")
+if failure:
+    results = {**results, **failure}
 payload = {
     "experiment_id": "FNX-R002",
     "archive_name": archive.name,
@@ -357,7 +360,7 @@ PY
 record_post_boundary_failure() {
   local exit_status="$1"
   local failed_stage="$2"
-  python3 - "$artifact_dir" "$exit_status" "$failed_stage" <<'PY'
+  python3 - "$artifact_dir" "$exit_status" "$failed_stage" "$source_dir" <<'PY'
 import json
 import os
 import sys
@@ -367,6 +370,7 @@ from pathlib import Path
 artifact_dir = Path(sys.argv[1])
 exit_status = int(sys.argv[2])
 failed_stage = sys.argv[3]
+source_dir = Path(sys.argv[4])
 boundary_path = artifact_dir / "live-boundary.json"
 held_out_accessed = False
 if boundary_path.is_file():
@@ -390,6 +394,42 @@ failure = {
 artifact_dir.mkdir(parents=True, exist_ok=True)
 (artifact_dir / "failure-evidence.json").write_text(
     json.dumps(failure, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+reports = source_dir / "reports"
+reports.mkdir(parents=True, exist_ok=True)
+results_path = reports / "R002_RESULTS.json"
+try:
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    results = {}
+if not isinstance(results, dict):
+    results = {}
+results.update(
+    {
+        "experiment_id": "FNX-R002",
+        "technical_status": "FAIL",
+        "r002_status": "NO_WINNER",
+        "production_status": "NOT_PRODUCTION_CERTIFIED",
+        "failed_stage": failed_stage,
+        "held_out_accessed": held_out_accessed,
+        "completed_at": now,
+    }
+)
+results_path.write_text(
+    json.dumps(results, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+docs = source_dir / "docs"
+docs.mkdir(parents=True, exist_ok=True)
+(docs / "R002_RESULTS.md").write_text(
+    "# FNX-R002 — Selective Reflex Cascade results\n\n"
+    "Technical status: **FAIL**  \n"
+    "R002 status: **NO_WINNER**  \n"
+    "Production status: **NOT_PRODUCTION_CERTIFIED**\n\n"
+    f"- Failed stage: {failed_stage}\n"
+    f"- Held-out accessed: {'YES' if held_out_accessed else 'NO'}\n"
+    "- Partial private evidence was preserved for diagnosis.\n",
     encoding="utf-8",
 )
 metrics = {

@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_post_boundary_failure_is_truthfully_persisted(tmp_path: Path) -> None:
     artifact = tmp_path / "artifacts"
+    source = tmp_path / "source"
     artifact.mkdir()
+    (source / "reports").mkdir(parents=True)
+    (source / "reports" / "R002_RESULTS.json").write_text(
+        json.dumps({"technical_status": "NOT_RUN", "r002_status": "NOT_RUN"}),
+        encoding="utf-8",
+    )
     (artifact / "live-boundary.json").write_text(
         json.dumps({"held_out_accessed": True}), encoding="utf-8"
     )
@@ -28,6 +34,7 @@ record_post_boundary_failure 17 REFLEX_FINAL
         "FNX_R002_SOURCE_TREE_SHA256": "tree",
         "FNX_R002_SOURCE_GIT_SHA": "git",
         "FNX_R002_ARTIFACT_DIR": str(artifact),
+        "FNX_R002_SOURCE_DIR": str(source),
         "FNX_PUBLIC_METRICS_PATH": str(artifact / "live" / "metrics.json"),
     }
     subprocess.run(
@@ -55,11 +62,20 @@ record_post_boundary_failure 17 REFLEX_FINAL
     assert metrics["final_result"] == "NO_WINNER"
     assert metrics["production_status"] == "NOT_PRODUCTION_CERTIFIED"
     assert archive_marker.exists()
+    final_report = json.loads((source / "reports" / "R002_RESULTS.json").read_text())
+    assert final_report["technical_status"] == "FAIL"
+    assert final_report["r002_status"] == "NO_WINNER"
+    assert final_report["failed_stage"] == "REFLEX_FINAL"
+    assert "Technical status: **FAIL**" in (
+        source / "docs" / "R002_RESULTS.md"
+    ).read_text()
 
 
 def test_post_boundary_error_trap_preserves_original_exit_status(tmp_path: Path) -> None:
     artifact = tmp_path / "artifacts"
+    source = tmp_path / "source"
     artifact.mkdir()
+    source.mkdir()
     (artifact / "live-boundary.json").write_text(
         json.dumps({"held_out_accessed": True}), encoding="utf-8"
     )
@@ -84,6 +100,7 @@ fail
             "FNX_R002_SOURCE_TREE_SHA256": "tree",
             "FNX_R002_SOURCE_GIT_SHA": "git",
             "FNX_R002_ARTIFACT_DIR": str(artifact),
+            "FNX_R002_SOURCE_DIR": str(source),
             "FNX_PUBLIC_METRICS_PATH": str(artifact / "live" / "metrics.json"),
         },
     )

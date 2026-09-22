@@ -88,3 +88,32 @@ persist_artifacts
     assert manifest["r002_status"] == "NO_TRAINING_JUSTIFIED"
     assert manifest["production_status"] == "NOT_PRODUCTION_CERTIFIED"
     assert oct(manifest_path.stat().st_mode & 0o777) == "0o600"
+    (artifact / "failure-evidence.json").write_text(
+        json.dumps(
+            {
+                "technical_status": "FAIL",
+                "r002_status": "NO_WINNER",
+                "held_out_accessed": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["bash", "-c", command],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "FORGENOVAX_WORK_DIR": str(tmp_path),
+            "FNX_R002_SOURCE_SHA256": "archive",
+            "FNX_R002_SOURCE_TREE_SHA256": "tree",
+            "FNX_R002_SOURCE_GIT_SHA": "git",
+            "FNX_R002_SOURCE_DIR": str(source),
+            "FNX_R002_ARTIFACT_DIR": str(artifact),
+            "FNX_PUBLIC_METRICS_PATH": str(artifact / "live" / "metrics.json"),
+        },
+    )
+    failed_manifest = json.loads(manifest_path.read_text())
+    assert failed_manifest["technical_status"] == "FAIL"
+    assert failed_manifest["r002_status"] == "NO_WINNER"
