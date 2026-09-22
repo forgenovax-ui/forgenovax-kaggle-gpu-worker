@@ -105,7 +105,14 @@ prepare_source() {
   test "$(source_tree_digest "$source_dir")" = "$source_tree_sha256"
   printf '%s  %s\n' "$source_tree_sha256" "$source_location"
   python -m pip install -q -e "${source_dir}[research]"
-  python -m pip install -q 'torchao==0.16.0'
+  python -m pip install -q 'transformers==5.17.0' 'torchao==0.16.0'
+  python - <<'PY'
+import transformers
+
+if transformers.__version__ != "5.17.0":
+    raise SystemExit(f"Transformers pin failed: {transformers.__version__}")
+print({"transformers": transformers.__version__})
+PY
   python "$source_dir/scripts/validate_r002_data.py"
   python "$source_dir/scripts/verify_live_readiness.py"
   python -m pytest -q "$source_dir/tests"
