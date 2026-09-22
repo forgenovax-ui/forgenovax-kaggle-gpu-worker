@@ -4,6 +4,8 @@
 
 This project turns an ephemeral Kaggle **GPU T4 x2** notebook session into an authenticated, OpenAI-compatible development inference worker. It is intended for ForgeNovaX engineering, QA, evaluation, batch inference, and experiments—not permanent production traffic.
 
+The worker now has mutually exclusive `MODE=inference` and `MODE=training` dispatch. Existing inference behavior is preserved; training mode releases and verifies both GPUs before launching an exact FNX revision. See [worker modes](docs/MODES.md).
+
 The default model is `qwen3-coder:30b`. Only the selected model is downloaded.
 
 ## Architecture
