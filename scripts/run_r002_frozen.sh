@@ -277,6 +277,74 @@ persist_artifacts() {
   sha256sum "$archive"
 }
 
+record_post_boundary_failure() {
+  local exit_status="$1"
+  local failed_stage="$2"
+  python3 - "$artifact_dir" "$exit_status" "$failed_stage" <<'PY'
+import json
+import os
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+artifact_dir = Path(sys.argv[1])
+exit_status = int(sys.argv[2])
+failed_stage = sys.argv[3]
+boundary_path = artifact_dir / "live-boundary.json"
+held_out_accessed = False
+if boundary_path.is_file():
+    try:
+        held_out_accessed = json.loads(
+            boundary_path.read_text(encoding="utf-8")
+        ).get("held_out_accessed") is True
+    except (OSError, json.JSONDecodeError):
+        held_out_accessed = True
+now = datetime.now(UTC).isoformat()
+failure = {
+    "experiment_id": "FNX-R002",
+    "technical_status": "FAIL",
+    "r002_status": "NO_WINNER",
+    "production_status": "NOT_PRODUCTION_CERTIFIED",
+    "failed_stage": failed_stage,
+    "exit_status": exit_status,
+    "held_out_accessed": held_out_accessed,
+    "recorded_at": now,
+}
+artifact_dir.mkdir(parents=True, exist_ok=True)
+(artifact_dir / "failure-evidence.json").write_text(
+    json.dumps(failure, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+metrics = {
+    "experiment_id": "FNX-R002",
+    "model": "FNX-1 Reflex",
+    "status": "FAILED",
+    "dry_run": False,
+    "final_result": "NO_WINNER",
+    "technical_status": "FAIL",
+    "production_status": "NOT_PRODUCTION_CERTIFIED",
+    "updated_at": now,
+}
+metrics_path = Path(os.environ["FNX_PUBLIC_METRICS_PATH"])
+metrics_path.parent.mkdir(parents=True, exist_ok=True)
+temporary = metrics_path.with_suffix(metrics_path.suffix + ".tmp")
+temporary.write_text(
+    json.dumps(metrics, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+os.replace(temporary, metrics_path)
+PY
+  persist_artifacts || true
+}
+
+post_boundary_error() {
+  local exit_status="$?"
+  trap - ERR
+  set +e
+  record_post_boundary_failure "$exit_status" "$post_boundary_stage"
+  exit "$exit_status"
+}
+
 main() {
   cd "$worker_dir"
   require_t4_x2 >/dev/null
@@ -299,8 +367,12 @@ main() {
     exit 64
   fi
   authorize_heldout
+  post_boundary_stage="STRONG_FINAL"
+  trap post_boundary_error ERR
   run_strong_final
+  post_boundary_stage="REFLEX_FINAL"
   run_reflex_final
+  trap - ERR
   set +e
   run_optional_adaptation
   adaptation_status=$?
