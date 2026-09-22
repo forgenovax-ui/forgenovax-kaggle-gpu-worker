@@ -12,6 +12,8 @@ artifact_dir="${FNX_R002_ARTIFACT_DIR:-$work_dir/fnx-r002-artifacts}"
 decider_dir="${FNX_R002_DECIDER_DIR:-$work_dir/fnx-upstream-r002/decider}"
 decider_revision="c4daaac28af9fea95d627015cffa2dd5a5926ee6"
 model="${MODEL:-qwen3-coder:30b}"
+live_boundary_file="${FNX_R002_LIVE_BOUNDARY_FILE:-}"
+not_before="${FNX_R002_NOT_BEFORE:-2026-09-22T09:00:00-04:00}"
 
 gpu_inventory() {
   nvidia-smi \
@@ -174,6 +176,17 @@ run_strong_final() {
     --artifact-dir "$artifact_dir"
 }
 
+authorize_heldout() {
+  if [[ -z "$live_boundary_file" ]] || [[ ! -f "$live_boundary_file" ]]; then
+    echo "FNX-R002 live boundary manifest is required before held-out access" >&2
+    exit 1
+  fi
+  PYTHONPATH="$worker_dir" python3 -m src.r002_boundary \
+    --input "$live_boundary_file" \
+    --output "$artifact_dir/live-boundary.json" \
+    --not-before "$not_before"
+}
+
 run_reflex_final() {
   "$script_dir/shutdown.sh"
   require_idle_gpus
@@ -202,6 +215,7 @@ main() {
   prepare_source
   prepare_decider
   run_reflex_pre
+  authorize_heldout
   run_strong_final
   run_reflex_final
   persist_artifacts
