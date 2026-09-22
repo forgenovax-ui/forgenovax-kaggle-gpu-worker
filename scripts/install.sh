@@ -10,6 +10,10 @@ mkdir -p "${BIN_DIR}"
 python3 -m pip install --disable-pip-version-check -r "${REPO_ROOT}/requirements.txt"
 
 if ! command -v ollama >/dev/null 2>&1; then
+  if ! command -v zstd >/dev/null 2>&1; then
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zstd
+  fi
   curl -fsSL https://ollama.com/install.sh | sh
 fi
 ollama --version
