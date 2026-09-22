@@ -236,7 +236,8 @@ run_reflex_final() {
       --source-revision "$decider_revision"
 }
 
-run_optional_adaptation() {
+run_optional_adaptation() (
+  set -Eeuo pipefail
   "$script_dir/stop_ollama.sh"
   require_idle_gpus
   CUDA_VISIBLE_DEVICES=0 HF_HOME="$work_dir/huggingface-r002" \
@@ -246,7 +247,7 @@ run_optional_adaptation() {
       --decider-dir "$decider_dir" \
       --artifact-dir "$artifact_dir" \
       --config "$worker_dir/configs/r002_adaptation.json"
-}
+)
 
 persist_artifacts() {
   local archive="$work_dir/FNX-R002-private-artifacts.tar.gz"
