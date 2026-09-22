@@ -77,6 +77,22 @@ print(hashlib.sha256("".join(rows).encode()).hexdigest())
 PY
 }
 
+select_source_dir() {
+  local requested="$1" actual refreshed
+  if [[ ! -f "$requested/scripts/run_r002_experiment.py" ]]; then
+    printf '%s\n' "$requested"
+    return 0
+  fi
+  actual="$(source_tree_digest "$requested")"
+  if [[ "$actual" == "$source_tree_sha256" ]]; then
+    printf '%s\n' "$requested"
+    return 0
+  fi
+  refreshed="$(mktemp -d "$work_dir/fnx-r002-source-verified.XXXXXX")"
+  echo "Preserving drifted runtime source tree and selecting a fresh verified workspace: $refreshed" >&2
+  printf '%s\n' "$refreshed"
+}
+
 locate_source_tree() {
   local marker candidate actual
   while IFS= read -r marker; do
@@ -94,6 +110,7 @@ locate_source_tree() {
 prepare_source() {
   local archive mounted_source source_location
   archive="$(locate_source_archive 2>/dev/null || true)"
+  source_dir="$(select_source_dir "$source_dir")"
   if [[ ! -f "$source_dir/scripts/run_r002_experiment.py" ]]; then
     mkdir -p "$source_dir"
     if [[ -n "$archive" ]]; then
@@ -292,4 +309,6 @@ main() {
   return "$adaptation_status"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
