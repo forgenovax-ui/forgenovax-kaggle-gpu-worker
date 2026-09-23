@@ -96,7 +96,7 @@ stop_gpu_sampler() {
 }
 
 run_candidate() {
-  local name="$1" config="$2" rows="$3"
+  local name="$1" config="$2" rows="$3" validation_rows="${4:-512}"
   local output="$artifact_root/$name"
   mkdir -p "$output"
   start_gpu_sampler "$output/gpu-samples.jsonl"
@@ -106,7 +106,7 @@ run_candidate() {
       --config "$source_dir/$config" \
       --output "$output" \
       --max-train-rows "$rows" \
-      --max-validation-rows 512 \
+      --max-validation-rows "$validation_rows" \
       --source-revision "$source_sha" \
       --resume
   stop_gpu_sampler
@@ -186,13 +186,12 @@ if [[ "$stage" == "pipeline" ]]; then
   run_candidate "FNX-R003-LORA-002" "configs/r003/fnx_reflex_2b_lora.yaml" 1024
   select_candidate
 else
-  selected="$(select_candidate)"
-  if [[ "$selected" == "FNX-R003-LORA-002" ]]; then
-    config="configs/r003/fnx_reflex_2b_lora.yaml"
-  else
-    config="configs/r003/fnx_reflex_2b_heads.yaml"
-  fi
-  run_candidate "FNX-R003-FULL-001" "$config" 28000
+  test "$(select_candidate)" = "FNX-R003-LORA-002"
+  run_candidate \
+    "FNX-R003-FULL-001" \
+    "configs/r003/fnx_reflex_2b_full.yaml" \
+    28000 \
+    4000
 fi
 
 persist_private_output
