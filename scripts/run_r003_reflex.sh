@@ -50,13 +50,16 @@ prepare_source() {
   git -C "$source_dir" checkout --detach "$source_sha"
   test "$(git -C "$source_dir" rev-parse HEAD)" = "$source_sha"
   python -m pip install -q -e "${source_dir}[research,dev]"
+  python -m pip install -q --upgrade \
+    'transformers @ git+https://github.com/huggingface/transformers.git@v5.17.0'
   python - <<'PY'
 import peft
 import torch
 import transformers
+from transformers import Qwen3_5ForConditionalGeneration
 
-if tuple(map(int, transformers.__version__.split(".")[:2])) < (5, 13):
-    raise SystemExit(f"Transformers lacks required native Qwen3.5 support: {transformers.__version__}")
+if transformers.__version__ != "5.17.0":
+    raise SystemExit(f"Transformers must be the frozen 5.17.0 release: {transformers.__version__}")
 print({"torch": torch.__version__, "transformers": transformers.__version__, "peft": peft.__version__})
 PY
   cd "$source_dir"
