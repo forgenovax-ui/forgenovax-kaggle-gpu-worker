@@ -4,6 +4,7 @@ set -Eeuo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 worker_dir="$(cd -- "$script_dir/.." && pwd)"
 work_dir="${FORGENOVAX_WORK_DIR:-/kaggle/working}"
+export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 source_dir="${FNX_R003_SOURCE_DIR:-$work_dir/forgenovax-fnx-r003}"
 source_repo="${FNX_R003_REPO_URL:-https://github.com/forgenovax-ui/forgenovax-fnx.git}"
 source_sha="${FNX_R003_SOURCE_GIT_SHA:?FNX_R003_SOURCE_GIT_SHA is required}"
@@ -120,7 +121,7 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 scores = {}
-for name in ("FNX-R003-HEADS-001", "FNX-R003-LORA-001"):
+for name in ("FNX-R003-HEADS-002", "FNX-R003-LORA-002"):
     manifest = json.loads((root / name / "run-manifest.json").read_text(encoding="utf-8"))
     scores[name] = manifest["history"][-1]["validation"]["loss"]
 selected = min(scores, key=scores.get)
@@ -181,12 +182,12 @@ prepare_source
 mkdir -p "$artifact_root"
 
 if [[ "$stage" == "pipeline" ]]; then
-  run_candidate "FNX-R003-HEADS-001" "configs/r003/fnx_reflex_2b_heads.yaml" 1024
-  run_candidate "FNX-R003-LORA-001" "configs/r003/fnx_reflex_2b_lora.yaml" 1024
+  run_candidate "FNX-R003-HEADS-002" "configs/r003/fnx_reflex_2b_heads.yaml" 1024
+  run_candidate "FNX-R003-LORA-002" "configs/r003/fnx_reflex_2b_lora.yaml" 1024
   select_candidate
 else
   selected="$(select_candidate)"
-  if [[ "$selected" == "FNX-R003-LORA-001" ]]; then
+  if [[ "$selected" == "FNX-R003-LORA-002" ]]; then
     config="configs/r003/fnx_reflex_2b_lora.yaml"
   else
     config="configs/r003/fnx_reflex_2b_heads.yaml"
