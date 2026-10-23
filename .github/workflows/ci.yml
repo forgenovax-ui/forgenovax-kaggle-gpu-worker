@@ -1,0 +1,37 @@
+name: Standalone Kaggle Worker Tests
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt nbformat
+      - name: Unit and integration-mock tests
+        run: python -m pytest -q
+      - name: Shell syntax
+        run: bash -n scripts/*.sh
+      - name: Notebook JSON and Python syntax
+        run: |
+          python - <<'PY'
+          import ast
+          import nbformat
+          book = nbformat.read("notebooks/forgenovax_kaggle_gpu_worker.ipynb", as_version=4)
+          for number, cell in enumerate(book.cells, 1):
+              if cell.cell_type == "code":
+                  ast.parse(cell.source, filename=f"notebook:cell:{number}")
+          print("Notebook parsed:", len(book.cells), "cells")
+          PY
