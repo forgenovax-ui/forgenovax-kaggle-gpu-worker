@@ -16,6 +16,8 @@ fi
 
 export PATH="${BIN_DIR}:${PATH}"
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+# Stable workspace location supports restoring read-only Kaggle dataset snapshots.
+export OLLAMA_MODELS="${OLLAMA_MODELS:-${WORK_DIR}/ollama-models}"
 export OLLAMA_CONTEXT_LENGTH="${CONTEXT_LENGTH:-32768}"
 export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-20m}"
