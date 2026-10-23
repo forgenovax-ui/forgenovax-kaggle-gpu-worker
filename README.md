@@ -55,6 +55,17 @@ ollama pull "${MODEL:-qwen3-coder:30b}"
 ./scripts/status.sh
 ```
 
+## Standalone reliability and optimization
+
+The notebook can now restore a previously saved and verified Ollama model
+cache from a private Kaggle input Dataset, skip downloading an already
+installed model, and optionally benchmark real inference throughput using
+Ollama performance counters and nvidia-smi GPU evidence.
+
+Start with **[Standalone optimization](docs/STANDALONE_OPTIMIZATION.md)**.
+The new features live exclusively in this Kaggle worker repository; they
+do not modify or deploy LinkedIn Intelligence.
+
 ## Kaggle Setup
 
 The exact non-engineer workflow, secret setup, and expected output are in [docs/KAGGLE_SETUP.md](docs/KAGGLE_SETUP.md). The notebook performs GPU detection, installation, readiness polling, model tests, authentication tests, listener isolation, tunnel startup, and full public inference validation.
