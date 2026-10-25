@@ -132,7 +132,10 @@ def evaluate_case(
         "stream": False,
         "think": False,
         "temperature": 0,
-        "max_tokens": 512,
+        # gpt-oss can spend hundreds of tokens in its reasoning channel before
+        # emitting schema-constrained content. Keep the cap finite but large
+        # enough to measure completed task quality instead of truncation.
+        "max_tokens": 2048,
         "options": {"num_ctx": context},
         "response_format": {
             "type": "json_schema",
