@@ -8,9 +8,9 @@ The worker now has mutually exclusive `MODE=inference` and `MODE=training` dispa
 
 The default model is `qwen3-coder:30b`. Only the selected model is downloaded.
 
-Live research-model selection is measurement-gated. The default remains
-unchanged until all supported models complete the same schema/quality/performance
-evaluation; see [model evaluation](docs/MODEL_EVALUATION.md).
+Live research-model selection is measurement-gated. The 2026-10-25 T4 x2 run
+selected `qwen3-coder:30b` at 8,192 context after all supported models completed
+the schema/quality/performance evaluation; see [model evaluation](docs/MODEL_EVALUATION.md).
 
 ## Architecture
 
@@ -90,7 +90,7 @@ The configured defaults are:
 
 ```text
 MODEL=qwen3-coder:30b
-CONTEXT_LENGTH=32768
+CONTEXT_LENGTH=8192
 OLLAMA_NUM_PARALLEL=1
 OLLAMA_SCHED_SPREAD=1
 OLLAMA_KEEP_ALIVE=20m
@@ -153,7 +153,7 @@ Change only `MODEL` before startup. Supported operating choices are:
 
 - `qwen3-coder:30b` (default; strongest coding option, highest resource demand)
 - `gpt-oss:20b` (general reasoning/coding alternative)
-- `qwen3:14b` (smaller and generally faster)
+- `qwen3:14b` (smallest supported model and lowest disk/VRAM demand)
 
 The worker downloads only the active model. See [docs/MODEL_GUIDE.md](docs/MODEL_GUIDE.md).
 

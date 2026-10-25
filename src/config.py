@@ -42,7 +42,7 @@ class Settings:
     """
 
     model: str = DEFAULT_MODEL
-    context_length: int = 32768
+    context_length: int = 8192
     ollama_num_parallel: int = 1
     ollama_keep_alive: str = "20m"
     ollama_host: str = "127.0.0.1:11434"
@@ -66,7 +66,7 @@ class Settings:
 
         return cls(
             model=os.getenv("MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL,
-            context_length=_positive_int("CONTEXT_LENGTH", 32768),
+            context_length=_positive_int("CONTEXT_LENGTH", 8192),
             ollama_num_parallel=_positive_int("OLLAMA_NUM_PARALLEL", 1),
             ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "20m").strip() or "20m",
             ollama_host=ollama_host,

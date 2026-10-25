@@ -9,11 +9,9 @@ or schedule browser actions.
 1. Import the repository's notebook into Kaggle.
 2. Select the T4 x2 accelerator, turn on Internet, and add the
    `FORGENOVAX_API_KEY` Kaggle secret.
-3. Choose a model in the notebook's configuration cell. Keep the existing
-   `qwen3-coder:30b` default for code tasks. For public-post classification and
-   summarization experiments, compare `qwen3:14b` at 8192 tokens against the
-   default **using real performance and quality tests**. No speed advantage is
-   assumed without benchmark evidence.
+3. Choose a model in the notebook's configuration cell. The measured T4 x2
+   default is `qwen3-coder:30b` at 8,192 context. Re-run the comparison before
+   changing it for a materially different workload.
 4. Run all cells. The worker confirms the GPUs, creates an authenticated
    OpenAI-compatible endpoint, and prints the temporary URL and model.
 
@@ -33,7 +31,9 @@ python3 -m src.model_cache export \
 
 This produces `fnx-cache-export/model-cache.json` and
 `fnx-cache-export/ollama-models/{blobs,manifests}`. All copied files are
-SHA-256 hashed and checked. Export **duplicates** model bytes temporarily.
+SHA-256 hashed and checked. Current Ollama `manifests-v2` links are preserved
+only when they are relative links to in-store SHA-256 blobs; unsafe links are
+rejected. Export **duplicates** model bytes temporarily.
 Ensure adequate free disk space, and check notebook output size limits before
 attempting to save it. Never include any access keys in the cache.
 
@@ -89,6 +89,11 @@ warmup count, and runtime load. Compare at least:
 
 The performance tool deliberately does not claim that model quality is
 equivalent: it reports performance only.
+
+On the live 2026-10-25 run, `OLLAMA_SCHED_SPREAD=1` increased qwen3:14b
+steady-state throughput from 20.43 to 25.62 tokens/s. Keep the spread setting
+enabled on T4 x2 unless a matched benchmark for a future Ollama/model release
+shows otherwise.
 
 ## Session recovery
 

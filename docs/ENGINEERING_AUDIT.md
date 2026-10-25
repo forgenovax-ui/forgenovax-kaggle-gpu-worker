@@ -54,6 +54,10 @@ revision; it remains separate from inference artifacts.
    blobs.
 8. Some idempotency checks accepted HTTP liveness without authenticated model
    readiness.
+9. Current Ollama creates safe internal `manifests-v2` symlinks; the original
+   blanket symlink rejection made live cache export fail closed.
+10. Reasoning models could consume the original readiness and evaluation token
+    ceilings before emitting user-visible content.
 
 ## Focused improvements
 
@@ -67,8 +71,25 @@ revision; it remains separate from inference artifacts.
   sequential/concurrent tests, context comparison, and measurement-gated model
   recommendation.
 - Added Ollama manifest-to-blob integrity checks.
+- Added a narrow, recorded allow-list for Ollama's internal
+  `manifests-v2 -> blobs` links while continuing to reject absolute,
+  out-of-store, broken, and unexpected links.
 - Hardened GPU visibility and startup/tunnel reuse around authenticated
   inference readiness.
+- Raised bounded readiness and quality budgets only far enough for reasoning
+  models to emit validated content.
+
+## Live delivery outcome
+
+- qwen3:14b cache export, checksum verification, non-overwriting restore, and
+  restored-path inference passed.
+- `OLLAMA_SCHED_SPREAD=1` improved qwen3:14b median throughput by 25.4% in the
+  matched three-run comparison and is now the default.
+- All three supported models completed the 4K/8K comparison with 100% final
+  schema success.
+- `qwen3-coder:30b` at 8,192 context won the measurement-gated recommendation.
+- The final recommended runtime passed public authenticated inference and
+  `OVERALL STATUS: READY`; the Kaggle session was then stopped.
 
 No LinkedIn Intelligence code, Anthropic integration, training implementation,
 or unrelated service was modified.

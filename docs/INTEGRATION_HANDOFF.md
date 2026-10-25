@@ -17,6 +17,20 @@ The router must treat a 200 from `/healthz` as insufficient. Route work only
 after `/readyz` returns `ready: true`, the expected `model`, and
 `inference: verified`.
 
+Measured default for Kaggle T4 x2:
+
+```text
+MODEL=qwen3-coder:30b
+CONTEXT_LENGTH=8192
+OLLAMA_SCHED_SPREAD=1
+OLLAMA_NUM_PARALLEL=1
+```
+
+The 2026-10-25 acceptance session passed public health, authenticated model
+discovery, and public inference readiness with this configuration. Its Quick
+Tunnel hostname was intentionally not recorded because it expired when the
+session was stopped.
+
 ## Structured requests
 
 Use `stream: false` with either `response_format.type=json_object` or

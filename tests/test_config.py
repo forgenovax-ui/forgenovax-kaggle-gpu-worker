@@ -6,6 +6,11 @@ from src.config import Settings
 API_KEY = "test-api-key-with-at-least-24-characters"
 
 
+def test_measured_context_is_the_environment_default(monkeypatch) -> None:
+    monkeypatch.delenv("CONTEXT_LENGTH", raising=False)
+    assert Settings.from_env().context_length == 8192
+
+
 @pytest.mark.parametrize(
     "settings,match",
     [

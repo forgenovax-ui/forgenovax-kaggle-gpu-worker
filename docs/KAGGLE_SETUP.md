@@ -8,7 +8,7 @@ You need a Kaggle account with GPU access. Kaggle may ask you to verify the acco
 
 1. Sign in to Kaggle.
 2. Verify your account or phone if Kaggle requires GPU verification.
-3. Create a new notebook.
+3. Create a notebook or open the existing ForgeNovaX worker notebook.
 4. Import `notebooks/forgenovax_kaggle_gpu_worker.ipynb`.
 5. Open notebook **Settings**.
 6. Select **Accelerator → GPU T4 x2**.

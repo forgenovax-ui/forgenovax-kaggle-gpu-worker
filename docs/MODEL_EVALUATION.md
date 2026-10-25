@@ -46,12 +46,48 @@ reported and are never downloaded implicitly. The recommendation remains
 Among models meeting the 90% structured-output gate, quality ranks first and
 latency breaks ties.
 
-## Current recommendation status
+## Live results — Kaggle T4 x2, 2026-10-25
 
-No model recommendation is recorded here until the live three-model run
-completes. The existing `qwen3-coder:30b` default is preserved meanwhile. This
-is intentional: a hardware inventory or unit-test pass is not evidence that a
-different model is faster or more accurate on the target workload.
+Each row used the four versioned cases, strict gateway validation, deterministic
+temperature, one performance run, and a two-request concurrency probe.
 
-`qwen3-coder:30b` remains an available coding model regardless of the eventual
-routine-research recommendation.
+| Model | Context | Schema success | Overall quality | Classification | Extraction | Median case latency | Generation tok/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `qwen3:14b` | 4,096 | 100% | 0.5625 | 0.625 | 0.500 | 19.895 s | 25.57 |
+| `qwen3:14b` | 8,192 | 100% | 0.5625 | 0.625 | 0.500 | 16.651 s | 25.38 |
+| `gpt-oss:20b` | 4,096 | 100% | 0.6125 | 0.625 | 0.600 | 18.410 s | 49.75 |
+| `gpt-oss:20b` | 8,192 | 100% | 0.6125 | 0.625 | 0.600 | 18.401 s | 49.76 |
+| `qwen3-coder:30b` | 4,096 | 100% | 0.7250 | 0.750 | 0.700 | 3.478 s | 60.95 |
+| `qwen3-coder:30b` | 8,192 | 100% | 0.7250 | 0.750 | 0.700 | 2.572 s | 60.01 |
+
+Usage metadata was present for every successful case. Both requests succeeded
+in every concurrency probe. With `OLLAMA_NUM_PARALLEL=1`, the paired requests
+were serialized rather than run simultaneously:
+
+| Model | Context | Two-request wall time | Request latencies |
+|---|---:|---:|---|
+| `qwen3:14b` | 4,096 | 25.668 s | 13.130 s, 25.666 s |
+| `qwen3:14b` | 8,192 | 25.713 s | 13.181 s, 25.712 s |
+| `gpt-oss:20b` | 4,096 | 50.632 s | 28.806 s, 50.631 s |
+| `gpt-oss:20b` | 8,192 | 50.897 s | 50.897 s, 28.908 s |
+| `qwen3-coder:30b` | 4,096 | 4.005 s | 2.061 s, 4.003 s |
+| `qwen3-coder:30b` | 8,192 | 3.723 s | 1.893 s, 3.722 s |
+
+The gpt-oss trials initially exposed reasoning-budget exhaustion: 16 readiness
+tokens and then 512 quality tokens were consumed in the reasoning channel before
+user-visible content. The runtime now uses 128 readiness tokens and a bounded
+2,048-token quality ceiling. qwen3:14b had already completed all cases under the
+earlier 512-token ceiling, and its performance prompt ended naturally at 60
+output tokens under a 128-token cap, so those caps were non-binding for qwen.
+
+## Measured recommendation
+
+Use `qwen3-coder:30b` with `CONTEXT_LENGTH=8192`,
+`OLLAMA_SCHED_SPREAD=1`, and `OLLAMA_NUM_PARALLEL=1` as the default for this
+T4 x2 worker.
+
+It had the highest schema-gated quality (0.725), the lowest median research-case
+latency (2.572 s at 8K), and the highest measured generation throughput among
+the tested configurations. Its larger 18 GB model-store footprint leaves only
+about 2.2 GiB of Kaggle working-disk headroom, so keep the sequential cache and
+model-rotation workflow documented above.
