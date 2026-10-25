@@ -64,10 +64,42 @@ def test_export_rejects_nested_destination(tmp_path: Path) -> None:
         export_cache(store, store / "nested")
 
 
-def test_symlinks_not_exported(tmp_path: Path) -> None:
+def test_unexpected_symlinks_not_exported(tmp_path: Path) -> None:
     store = sample_store(tmp_path)
     (store / "blobs" / "other").symlink_to(store / "blobs" / "sha256-synthetic")
-    with pytest.raises(ValueError, match="Symlinks"):
+    with pytest.raises(ValueError, match="Unsafe"):
+        export_cache(store, tmp_path / "export")
+
+
+def test_current_ollama_manifest_symlink_roundtrip(tmp_path: Path) -> None:
+    store = sample_store(tmp_path)
+    manifest_blob = store / "blobs" / ("sha256-" + "a" * 64)
+    manifest_blob.write_text('{"schemaVersion":2}')
+    v2 = store / "manifests-v2" / "ollama.com" / "library" / "tiny"
+    v2.mkdir(parents=True)
+    (v2 / "latest").symlink_to(Path("../../../../blobs") / manifest_blob.name)
+
+    snapshot = tmp_path / "export"
+    restored = tmp_path / "restored"
+    manifest = export_cache(store, snapshot)
+    assert manifest["links"] == [{
+        "path": "manifests-v2/ollama.com/library/tiny/latest",
+        "target": f"../../../../blobs/{manifest_blob.name}",
+    }]
+    restore_cache(snapshot, restored)
+    restored_link = restored / "manifests-v2" / "ollama.com" / "library" / "tiny" / "latest"
+    assert restored_link.is_symlink()
+    assert restored_link.resolve().read_text() == '{"schemaVersion":2}'
+
+
+def test_manifest_symlink_cannot_escape_store(tmp_path: Path) -> None:
+    store = sample_store(tmp_path)
+    outside = tmp_path / "outside"
+    outside.write_text("not model data")
+    v2 = store / "manifests-v2"
+    v2.mkdir()
+    (v2 / "unsafe").symlink_to(outside)
+    with pytest.raises(ValueError, match="Unsafe"):
         export_cache(store, tmp_path / "export")
 
 
@@ -98,7 +130,7 @@ def test_interrupted_restore_cleans_staging_without_target(
     export_cache(sample_store(tmp_path), snapshot)
     target = tmp_path / "target"
 
-    def interrupted_copytree(source: Path, destination: Path) -> None:
+    def interrupted_copytree(source: Path, destination: Path, **_: object) -> None:
         destination.mkdir(parents=True)
         (destination / "partial").write_text("incomplete")
         raise OSError("simulated interruption")

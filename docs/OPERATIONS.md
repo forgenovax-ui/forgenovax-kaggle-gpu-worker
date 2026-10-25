@@ -44,7 +44,7 @@ Use the notebook diagnostics cell for redacted recent output. Uvicorn access log
 
 ## Model lifecycle
 
-`OLLAMA_KEEP_ALIVE=20m` retains the model after a request. After it unloads, the next request incurs warm-up latency. `OLLAMA_NUM_PARALLEL=1` limits concurrent generation pressure for the T4 pair.
+`OLLAMA_KEEP_ALIVE=20m` retains the model after a request. After it unloads, the next request incurs warm-up latency. `OLLAMA_NUM_PARALLEL=1` limits concurrent generation pressure for the T4 pair. `OLLAMA_SCHED_SPREAD=1` intentionally distributes a model across both visible T4s; set it to `0` only when reproducing Ollama's default single-GPU placement.
 
 ## Shutdown
 
