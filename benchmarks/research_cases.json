@@ -1,0 +1,53 @@
+{
+  "schema": "forgenovax-synthetic-research-cases-v1",
+  "cases": [
+    {
+      "id": "classification-ai-evaluation",
+      "task": "post_classification",
+      "discussion": "An ML platform lead describes measuring retrieval accuracy, first-token latency, and hallucination rates before rolling a support assistant into production. They ask peers which evaluation sets catch failures missed by aggregate benchmarks.",
+      "expected": {
+        "category": "ai_engineering",
+        "relevance_score_min": 80,
+        "relevance_score_max": 100,
+        "additional_research_justified": true,
+        "reasoning_keywords": ["evaluation", "latency"]
+      }
+    },
+    {
+      "id": "classification-unrelated-office-event",
+      "task": "post_classification",
+      "discussion": "A local office shares photos from its annual costume lunch and asks employees to vote for the best table decorations. No business problem, method, result, or professional question is discussed.",
+      "expected": {
+        "category": "unrelated",
+        "relevance_score_min": 0,
+        "relevance_score_max": 25,
+        "additional_research_justified": false,
+        "reasoning_keywords": ["no business", "unrelated"]
+      }
+    },
+    {
+      "id": "analysis-operations-tool-fragmentation",
+      "task": "discussion_analysis",
+      "discussion": "An operations leader says the team loses time switching between separate scheduling and reporting tools. One commenter asks how the lost time is measured. Another recommends establishing a baseline before automating. No vendor, budget, or measured result is provided.",
+      "expected": {
+        "central_argument_keywords": ["scheduling", "reporting"],
+        "unanswered_question_keywords": ["measure", "baseline"],
+        "discussion_quality": "medium",
+        "business_need_keywords": ["time", "workflow"],
+        "source_grounded": true
+      }
+    },
+    {
+      "id": "analysis-unsupported-productivity-claim",
+      "task": "discussion_analysis",
+      "discussion": "A founder claims a four-day week doubled productivity. A commenter agrees, while another asks for the team size, measurement period, and definition of productivity. The founder supplies none of those details.",
+      "expected": {
+        "central_argument_keywords": ["four-day", "productivity"],
+        "unanswered_question_keywords": ["team size", "measurement"],
+        "discussion_quality": "low",
+        "business_need_keywords": ["productivity", "measurement"],
+        "source_grounded": true
+      }
+    }
+  ]
+}

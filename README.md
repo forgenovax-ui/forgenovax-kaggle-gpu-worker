@@ -8,6 +8,10 @@ The worker now has mutually exclusive `MODE=inference` and `MODE=training` dispa
 
 The default model is `qwen3-coder:30b`. Only the selected model is downloaded.
 
+Live research-model selection is measurement-gated. The 2026-10-25 T4 x2 run
+selected `qwen3-coder:30b` at 8,192 context after all supported models completed
+the schema/quality/performance evaluation; see [model evaluation](docs/MODEL_EVALUATION.md).
+
 ## Architecture
 
 ```text
@@ -55,6 +59,25 @@ ollama pull "${MODEL:-qwen3-coder:30b}"
 ./scripts/status.sh
 ```
 
+## Standalone reliability and optimization
+
+The notebook can now restore a previously saved and verified Ollama model
+cache from a private Kaggle input Dataset, skip downloading an already
+installed model, and optionally benchmark real inference throughput using
+Ollama performance counters and nvidia-smi GPU evidence.
+
+Start with **[Standalone optimization](docs/STANDALONE_OPTIMIZATION.md)**.
+The new features live exclusively in this Kaggle worker repository; they
+do not modify or deploy LinkedIn Intelligence.
+
+Audit and handoff records:
+
+- [Engineering audit](docs/ENGINEERING_AUDIT.md)
+- [GPU optimization report](docs/GPU_OPTIMIZATION_REPORT.md)
+- [Model evaluation](docs/MODEL_EVALUATION.md)
+- [External router handoff](docs/INTEGRATION_HANDOFF.md)
+- [Test report](docs/TEST_REPORT.md)
+
 ## Kaggle Setup
 
 The exact non-engineer workflow, secret setup, and expected output are in [docs/KAGGLE_SETUP.md](docs/KAGGLE_SETUP.md). The notebook performs GPU detection, installation, readiness polling, model tests, authentication tests, listener isolation, tunnel startup, and full public inference validation.
@@ -67,8 +90,9 @@ The configured defaults are:
 
 ```text
 MODEL=qwen3-coder:30b
-CONTEXT_LENGTH=32768
+CONTEXT_LENGTH=8192
 OLLAMA_NUM_PARALLEL=1
+OLLAMA_SCHED_SPREAD=1
 OLLAMA_KEEP_ALIVE=20m
 OLLAMA_HOST=127.0.0.1:11434
 PROXY_HOST=127.0.0.1
@@ -129,7 +153,7 @@ Change only `MODEL` before startup. Supported operating choices are:
 
 - `qwen3-coder:30b` (default; strongest coding option, highest resource demand)
 - `gpt-oss:20b` (general reasoning/coding alternative)
-- `qwen3:14b` (smaller and generally faster)
+- `qwen3:14b` (smallest supported model and lowest disk/VRAM demand)
 
 The worker downloads only the active model. See [docs/MODEL_GUIDE.md](docs/MODEL_GUIDE.md).
 
@@ -150,6 +174,7 @@ Read [docs/SECURITY.md](docs/SECURITY.md) before use. Key properties:
 - Ollama and FastAPI bind only to loopback.
 - all `/v1/*` routes require a bearer token;
 - `/healthz` is public but contains no secrets;
+- `/readyz` requires authentication and performs a real model inference;
 - the Cloudflare tunnel targets port 8000, never port 11434;
 - actual credentials are never committed or included in access logs.
 

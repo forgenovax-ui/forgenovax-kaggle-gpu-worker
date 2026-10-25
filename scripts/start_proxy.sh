@@ -27,10 +27,19 @@ fi
 mkdir -p "${WORK_DIR}"
 cd "${REPO_ROOT}"
 
-if curl -fsS "http://${PROXY_HOST}:${PROXY_PORT}/healthz" >/dev/null 2>&1; then
-  echo "Proxy is already ready at http://${PROXY_HOST}:${PROXY_PORT}"
-  exit 0
+health_body="$(curl -fsS "http://${PROXY_HOST}:${PROXY_PORT}/healthz" 2>/dev/null || true)"
+if [[ -n "$health_body" ]]; then
+  if python3 -c 'import json,sys; assert json.load(sys.stdin) == {"ok":True,"service":"forgenovax-kaggle-ai"}' <<< "$health_body" &&
+     curl -fsS --max-time "${READINESS_TIMEOUT_SECONDS:-180}" \
+       -H "Authorization: Bearer ${FORGENOVAX_API_KEY}" \
+       "http://${PROXY_HOST}:${PROXY_PORT}/readyz" >/dev/null; then
+    echo "Proxy and model inference are already ready at http://${PROXY_HOST}:${PROXY_PORT}"
+    exit 0
+  fi
+  echo "Port ${PROXY_PORT} responds but authenticated inference is not ready; run scripts/shutdown.sh before restart" >&2
+  exit 1
 fi
+rm -f "${PID_FILE}"
 
 nohup python3 -m uvicorn src.proxy.app:app \
   --host "${PROXY_HOST}" \
@@ -42,8 +51,12 @@ echo "${PROXY_PID}" >"${PID_FILE}"
 
 for _ in $(seq 1 60); do
   if curl -fsS "http://${PROXY_HOST}:${PROXY_PORT}/healthz" >/dev/null 2>&1; then
-    echo "Authenticated proxy is ready at http://${PROXY_HOST}:${PROXY_PORT} (PID ${PROXY_PID})"
-    exit 0
+    if curl -fsS --max-time "${READINESS_TIMEOUT_SECONDS:-180}" \
+      -H "Authorization: Bearer ${FORGENOVAX_API_KEY}" \
+      "http://${PROXY_HOST}:${PROXY_PORT}/readyz" >/dev/null 2>&1; then
+      echo "Authenticated proxy and model inference are ready at http://${PROXY_HOST}:${PROXY_PORT} (PID ${PROXY_PID})"
+      exit 0
+    fi
   fi
   if ! kill -0 "${PROXY_PID}" 2>/dev/null; then
     echo "Proxy exited before becoming ready" >&2

@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from src.config import Settings
+from src.gpu_diagnostics import compute_processes, gpu_inventory
 
 
 WORK_DIR = Path(os.getenv("FORGENOVAX_WORK_DIR", "/kaggle/working"))
@@ -23,6 +24,7 @@ class Check:
     name: str
     passed: bool
     detail: str = ""
+    required: bool = True
 
 
 def _http_get(
@@ -56,34 +58,31 @@ def _pid_is_running(pid_file: Path, expected_command: str | None = None) -> bool
 
 
 def _gpu_checks() -> list[Check]:
-    command = [
-        "nvidia-smi",
-        "--query-gpu=index,name,memory.total,driver_version",
-        "--format=csv,noheader,nounits",
-    ]
-    try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    inventory = gpu_inventory()
+    devices = inventory["devices"]
+    if not devices:
         return [
             Check("GPU runtime", False, "nvidia-smi unavailable"),
             Check("GPU 0", False, "not detected"),
             Check("GPU 1", False, "not detected"),
         ]
-
-    rows = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    by_index = {row.split(",", 1)[0].strip(): row for row in rows}
-    gpu_runtime_ok = len(rows) == 2 and all("T4" in row for row in rows)
+    by_index = {str(device.get("index")): device for device in devices}
+    gpu_runtime_ok = len(devices) == 2 and all("T4" in str(device.get("name")) for device in devices)
     checks = [
         Check(
             "GPU runtime",
             gpu_runtime_ok,
-            f"{len(rows)} NVIDIA GPU(s) visible; T4 x2 {'confirmed' if gpu_runtime_ok else 'not confirmed'}",
+            f"{len(devices)} separate NVIDIA GPU memory device(s) visible; T4 x2 {'confirmed' if gpu_runtime_ok else 'not confirmed'}",
         )
     ]
     for index in ("0", "1"):
-        row = by_index.get(index)
+        device = by_index.get(index)
         checks.append(
-            Check(f"GPU {index}", row is not None and "T4" in row, row or "not detected")
+            Check(
+                f"GPU {index}",
+                device is not None and "T4" in str(device.get("name")),
+                json.dumps(device, sort_keys=True) if device else "not detected",
+            )
         )
     return checks
 
@@ -146,6 +145,60 @@ def run_checks(settings: Settings | None = None) -> list[Check]:
     )
     checks.append(Check("Model loaded", loaded, config.model if loaded else "not loaded"))
 
+    loaded_models = [
+        model
+        for model in _json(ps_response).get("models", [])
+        if isinstance(model, dict)
+        and str(model.get("name", "")).removesuffix(":latest")
+        == config.model.removesuffix(":latest")
+    ]
+    placement = loaded_models[0] if loaded_models else {}
+    size = placement.get("size")
+    size_vram = placement.get("size_vram")
+    offload_ratio = None
+    if isinstance(size, int) and size > 0 and isinstance(size_vram, int):
+        offload_ratio = max(0, size - size_vram) / size
+    accelerated = isinstance(size_vram, int) and size_vram > 0
+    checks.append(
+        Check(
+            "Ollama GPU acceleration",
+            loaded and accelerated,
+            (
+                f"VRAM bytes={size_vram}; CPU offload={offload_ratio:.1%}"
+                if offload_ratio is not None
+                else "Ollama did not report measured VRAM placement"
+            ),
+        )
+    )
+    checks.append(
+        Check(
+            "CPU offload",
+            offload_ratio is not None and offload_ratio <= 0.20,
+            (
+                f"{offload_ratio:.1%} of model bytes outside VRAM"
+                if offload_ratio is not None
+                else "not measurable"
+            ),
+        )
+    )
+
+    inventory = gpu_inventory()
+    processes = compute_processes(inventory["devices"])
+    for index in (0, 1):
+        allocated = sum(
+            int(process.get("used_memory_mib") or 0)
+            for process in processes
+            if process.get("gpu_index") == index
+        )
+        checks.append(
+            Check(
+                f"GPU {index} model process memory",
+                allocated > 0,
+                f"{allocated} MiB measured across compute processes",
+                required=False,
+            )
+        )
+
     health_response = _http_get(f"{config.proxy_base_url}/healthz")
     health_body = _json(health_response)
     proxy_ok = (
@@ -167,6 +220,27 @@ def run_checks(settings: Settings | None = None) -> list[Check]:
     )
 
     auth_headers = {"Authorization": f"Bearer {config.api_key}"} if config.api_key else {}
+    readiness = _http_get(
+        f"{config.proxy_base_url}/readyz",
+        headers=auth_headers,
+        timeout=config.readiness_timeout_seconds,
+    )
+    readiness_body = _json(readiness)
+    readiness_ok = (
+        proxy_ok
+        and readiness is not None
+        and readiness.status_code == 200
+        and readiness_body.get("ready") is True
+        and readiness_body.get("model") == config.model
+        and readiness_body.get("inference") == "verified"
+    )
+    checks.append(
+        Check(
+            "Authenticated inference readiness",
+            readiness_ok,
+            f"HTTP {readiness.status_code}" if readiness is not None else "no response",
+        )
+    )
     authorized = _http_get(f"{config.proxy_base_url}/v1/models", headers=auth_headers)
     authorized_ok = (
         proxy_ok
@@ -228,17 +302,41 @@ def run_checks(settings: Settings | None = None) -> list[Check]:
             f"HTTP {public_models.status_code}" if public_models is not None else "no authenticated response",
         )
     )
+    public_ready = (
+        _http_get(
+            f"{tunnel_url}/readyz",
+            headers=auth_headers,
+            timeout=config.readiness_timeout_seconds,
+        )
+        if tunnel_url and config.api_key
+        else None
+    )
+    public_ready_body = _json(public_ready)
+    public_ready_ok = (
+        public_api_ok
+        and public_ready is not None
+        and public_ready.status_code == 200
+        and public_ready_body.get("ready") is True
+        and public_ready_body.get("model") == config.model
+    )
+    checks.append(
+        Check(
+            "Public inference readiness",
+            public_ready_ok,
+            f"HTTP {public_ready.status_code}" if public_ready is not None else "no authenticated response",
+        )
+    )
     return checks
 
 
 def format_report(checks: list[Check]) -> str:
     lines = ["ForgeNovaX Kaggle GPU Worker", ""]
     for check in checks:
-        state = "PASS" if check.passed else "FAIL"
+        state = "PASS" if check.passed else ("FAIL" if check.required else "UNVERIFIED")
         suffix = f" ({check.detail})" if check.detail else ""
         lines.append(f"{check.name}: {state}{suffix}")
     lines.extend(
-        ["", f"OVERALL STATUS: {'READY' if all(item.passed for item in checks) else 'NOT READY'}"]
+        ["", f"OVERALL STATUS: {'READY' if all(item.passed for item in checks if item.required) else 'NOT READY'}"]
     )
     return "\n".join(lines)
 
@@ -250,7 +348,7 @@ def main() -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
     print(format_report(checks))
-    return 0 if all(item.passed for item in checks) else 1
+    return 0 if all(item.passed for item in checks if item.required) else 1
 
 
 if __name__ == "__main__":

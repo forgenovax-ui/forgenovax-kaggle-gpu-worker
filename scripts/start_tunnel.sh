@@ -52,13 +52,44 @@ invalid_code="$(curl -sS -o /dev/null -w '%{http_code}' \
 authorized_code="$(curl -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer ${FORGENOVAX_API_KEY}" \
   "http://127.0.0.1:${PROXY_PORT}/v1/models")"
+readiness_code="$(curl -sS --max-time "${READINESS_TIMEOUT_SECONDS:-180}" -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer ${FORGENOVAX_API_KEY}" \
+  "http://127.0.0.1:${PROXY_PORT}/readyz")"
 
-if [[ "${unauthorized_code}" != "401" || "${invalid_code}" != "401" || "${authorized_code}" != "200" ]]; then
-  echo "Authentication preflight failed (missing=${unauthorized_code}, invalid=${invalid_code}, valid=${authorized_code})" >&2
+if [[ "${unauthorized_code}" != "401" || "${invalid_code}" != "401" || "${authorized_code}" != "200" || "${readiness_code}" != "200" ]]; then
+  echo "Authentication/readiness preflight failed (missing=${unauthorized_code}, invalid=${invalid_code}, valid=${authorized_code}, ready=${readiness_code})" >&2
   exit 1
 fi
 
-rm -f "${URL_FILE}"
+# A rerun should reuse a still-working tunnel instead of leaving duplicate
+# cloudflared processes running. A PID file alone is never trusted.
+if [[ -f "${PID_FILE}" ]]; then
+  previous_pid="$(cat "${PID_FILE}")"
+  if [[ "$previous_pid" =~ ^[0-9]+$ ]] && kill -0 "$previous_pid" 2>/dev/null; then
+    process_command="$(ps -p "$previous_pid" -o args= 2>/dev/null || true)"
+    if [[ "$process_command" == *cloudflared*tunnel* && "$process_command" == *"127.0.0.1:${PROXY_PORT}"* ]]; then
+      previous_url="$(cat "${URL_FILE}" 2>/dev/null || true)"
+      if [[ "$previous_url" =~ ^https://[a-z0-9-]+\.trycloudflare\.com$ ]] &&
+         curl -fsS --max-time "${READINESS_TIMEOUT_SECONDS:-180}" \
+           -H "Authorization: Bearer ${FORGENOVAX_API_KEY}" \
+           "${previous_url}/readyz" |
+           python3 -c 'import json,sys; r=json.load(sys.stdin); assert r.get("ready") is True and r.get("inference") == "verified"'; then
+        echo "Existing Cloudflare tunnel is healthy: ${previous_url} (PID ${previous_pid})"
+        exit 0
+      fi
+      echo "Replacing stale Cloudflare tunnel PID ${previous_pid}"
+      kill "$previous_pid" 2>/dev/null || true
+      for _ in {1..10}; do
+        kill -0 "$previous_pid" 2>/dev/null || break
+        sleep 1
+      done
+    else
+      echo "Ignoring stale Cloudflare PID file: PID belongs to a different process" >&2
+    fi
+  fi
+fi
+
+rm -f "${PID_FILE}" "${URL_FILE}"
 nohup cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:${PROXY_PORT}" \
   >"${LOG_FILE}" 2>&1 &
 CLOUDFLARED_PID=$!
@@ -68,8 +99,12 @@ for _ in $(seq 1 90); do
   tunnel_url="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "${LOG_FILE}" 2>/dev/null | tail -n 1 || true)"
   if [[ -n "${tunnel_url}" ]]; then
     echo "${tunnel_url}" >"${URL_FILE}"
-    echo "Cloudflare Quick Tunnel is ready: ${tunnel_url} (PID ${CLOUDFLARED_PID})"
-    exit 0
+    if curl -fsS --max-time "${READINESS_TIMEOUT_SECONDS:-180}" \
+      -H "Authorization: Bearer ${FORGENOVAX_API_KEY}" \
+      "${tunnel_url}/readyz" >/dev/null 2>&1; then
+      echo "Cloudflare Quick Tunnel and public inference are ready: ${tunnel_url} (PID ${CLOUDFLARED_PID})"
+      exit 0
+    fi
   fi
   if ! kill -0 "${CLOUDFLARED_PID}" 2>/dev/null; then
     echo "cloudflared exited before publishing a tunnel URL" >&2

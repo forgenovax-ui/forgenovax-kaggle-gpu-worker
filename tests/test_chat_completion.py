@@ -73,5 +73,25 @@ def test_ollama_connection_failure_is_sanitized() -> None:
         )
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Inference service is unavailable"}
+    assert response.json()["error"]["code"] == "upstream_unavailable"
+    assert response.json()["error"]["message"] == "Inference service is unavailable"
+    assert "private" not in response.text
+
+
+def test_ollama_timeout_has_standard_gateway_error() -> None:
+    def timeout(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("private upstream timeout", request=request)
+
+    app = create_app(
+        Settings(api_key=API_KEY), transport=httpx.MockTransport(timeout)
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {API_KEY}"},
+            json={"model": "qwen3:14b", "messages": [], "stream": False},
+        )
+
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "upstream_timeout"
     assert "private" not in response.text
