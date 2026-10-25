@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import httpx
+import json
 
 from src.config import Settings
 from src.proxy.app import create_app
@@ -14,6 +15,9 @@ def test_readiness_requires_auth_and_real_sentinel_inference() -> None:
     def upstream(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         assert request.url.path == "/api/chat"
+        payload = json.loads(request.content)
+        assert payload["think"] is False
+        assert payload["options"]["num_predict"] == 128
         calls += 1
         return httpx.Response(
             200,

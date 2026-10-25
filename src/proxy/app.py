@@ -206,7 +206,10 @@ def create_app(
                     "options": {
                         "temperature": 0,
                         "num_ctx": min(runtime_settings.context_length, 2048),
-                        "num_predict": 16,
+                        # gpt-oss may emit a short thinking trace even when
+                        # think=false. Keep enough bounded budget for the
+                        # sentinel to reach the content field.
+                        "num_predict": 128,
                     },
                 },
                 timeout=runtime_settings.readiness_timeout_seconds,
