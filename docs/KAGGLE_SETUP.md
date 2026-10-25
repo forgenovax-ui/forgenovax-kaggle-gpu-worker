@@ -41,3 +41,18 @@ Afterward it installs services, pulls only the configured model, runs local mode
 ## Re-running after a reset
 
 Kaggle storage and processes are ephemeral. After a full runtime reset, use **Run All** again. The Quick Tunnel URL and any generated temporary key will change.
+
+## Pitfalls seen in the real account (2026-10-25)
+
+- **Importing this notebook (File → Import Notebook) replaces the draft's data
+  sources.** Re-attach any datasets the draft used (for example the R002 source
+  datasets) and re-check Accelerator and Internet afterwards. Saved versions are
+  kept in Version history.
+- The notebook clones `FORGENOVAX_REPO_REF` (default: the branch it ships on).
+  Override it in the console before **Run All** only for an authorized branch.
+- Secret values belong in Add-ons → Secrets → Edit secret → **Value**. Text pasted
+  into the console box stays visible on screen; clear it and rotate the key if
+  that happens.
+- `/readyz` after an idle period loads the model first (measured ≈ 48 s); clients
+  should allow at least two minutes for a readiness check.
+

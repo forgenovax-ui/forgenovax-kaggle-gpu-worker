@@ -59,3 +59,22 @@ This stops the cloudflared, uvicorn, and Ollama processes recorded by the worker
 ## Runtime recovery
 
 If a component fails, inspect its log, run shutdown, and rerun notebook cells from installation/startup. After a Kaggle reset, run the entire notebook because PIDs, keys, model files, and URLs may no longer exist.
+
+## Rotate the gateway key without reloading the model
+
+1. Edit the Kaggle secret `FORGENOVAX_API_KEY` (Add-ons → Secrets → ⋯ → Edit
+   secret → paste into **Value** → Save). Paste into the Secrets panel, never into
+   a cell or the console.
+2. In the running notebook, reload it and restart only the gateway:
+
+   ```python
+   from kaggle_secrets import UserSecretsClient
+   os.environ["FORGENOVAX_API_KEY"] = UserSecretsClient().get_secret("FORGENOVAX_API_KEY").strip()
+   subprocess.run(["bash", "scripts/restart_proxy.sh"], check=True, env=os.environ.copy())
+   ```
+
+   To compare with the client copy without revealing it, print
+   `hashlib.sha256(key.encode()).hexdigest()[:12]` on both sides.
+3. Update the client copy (LinkedIn Intelligence: `secrets/kaggle_api_key`). The
+   tunnel URL does not change.
+

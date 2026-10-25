@@ -50,3 +50,25 @@ sanitized OpenAI-shaped 502 error.
   URLs persistent.
 - Never send browser cookies, private messages, account credentials, or other
   sensitive account data to this public-data research worker.
+
+## Connected client: ForgeNovaX LinkedIn Intelligence
+
+LinkedIn Intelligence (`packages/research-engine/src/kaggle.ts`) is the
+authoritative application; this worker only answers public-post triage and
+analysis requests.
+
+- Key: LinkedIn Intelligence `secrets/kaggle_api_key` holds the same value as the
+  notebook secret `FORGENOVAX_API_KEY` (install with
+  `infrastructure/deployment/set-secret.sh kaggle_api_key --generate --copy`,
+  then paste into the Kaggle secret).
+- Endpoint: after each session starts, paste the printed **OPENAI BASE URL** into
+  LinkedIn Intelligence → Settings → Kaggle GPU inference → *Verify and connect*
+  (or `PUT /api/inference/kaggle`). It is saved only after `/readyz` verified
+  inference for the served model; no redeploy is needed.
+- Routing: Kaggle first for eligible public tasks when ready; otherwise, or on an
+  expired tunnel, timeout, gateway schema rejection or a request larger than the
+  8,192-token context, the client uses Claude. An unreachable host is backed off
+  (60 s, doubling to 30 min) instead of being called repeatedly.
+- Accounting: Kaggle calls are recorded as `kaggle/<model>` at $0; failed attempts
+  as `kaggle_error:<reason>` with zero tokens.
+

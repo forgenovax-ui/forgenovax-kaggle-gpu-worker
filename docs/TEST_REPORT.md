@@ -46,3 +46,34 @@ Live acceptance evidence:
   prevent further GPU-quota use.
 
 No unit test or mocked response is counted as live GPU acceptance.
+
+## Live session 2 — 2026-10-25 (LinkedIn Intelligence integration)
+
+Run in the existing notebook `forgenovaxinc/forgenovax-kaggle-gpu-worker`
+(Accelerator GPU T4 x2, Internet on, secret `FORGENOVAX_API_KEY` attached). The
+hosted draft was still the 2026-09-22 notebook (32K context, no
+`OLLAMA_SCHED_SPREAD`, cloned `main`), so this branch's notebook was imported
+and the worker source pinned to `feat/standalone-reliability-model-cache`
+(`bc1632b`). Saved Version 2 remains in the notebook's version history.
+
+| Check | Result |
+|---|---|
+| GPUs | 2 × Tesla T4, 15,360 MiB each, driver 580.178.04 |
+| In-notebook test suite | passed (Run All continued past the pytest cell) |
+| `scripts/status.sh` | `OVERALL STATUS: READY` |
+| Model placement (`ollama ps`) | `qwen3-coder:30b`, 19 GB, **100% GPU**, context 8192; GPU0 9,841 MiB, GPU1 9,311 MiB (split across both) |
+| Disk after model load | 18 GB used of 20 GB, 2.2 GB free (`/kaggle/working/ollama-models` 18 GB) |
+| Listening sockets | `127.0.0.1:8000` (gateway) and `127.0.0.1:11434` (Ollama) only |
+| External `/healthz` (from a Mac, through the Quick Tunnel) | 200 |
+| External `/v1/models`, `/readyz` without key | 401, 401 |
+| External invalid key / previous key | 401 |
+| External Ollama path `/api/tags` | 404 (not exposed) |
+| External authenticated `/v1/models` | 200, `["qwen3-coder:30b"]` |
+| External authenticated `/readyz` | 200, `ready: true`, `inference: verified`, 0.43 s |
+| External structured completion (JSON Schema, synthetic post) | 200, schema-valid; 47.9 s first (model load after idle), **1.11 s** warm; usage reported (55 prompt / 30–33 completion tokens) |
+| Gateway key rotation | new secret verified by fingerprint in the kernel; only uvicorn restarted; tunnel URL unchanged; previous key then rejected (401) |
+| LinkedIn Intelligence client (`KaggleLlm` + `PublicResearchRouter`) | real `post_triage` call: schema-valid, 4.0 s, usage recorded as `kaggle/qwen3-coder:30b` (666 in / 167 out); a `draft_message` task was not sent to Kaggle |
+| Session stopped afterwards | yes (GPU quota) |
+
+The Quick Tunnel hostname is not recorded: it expired with the session.
+
