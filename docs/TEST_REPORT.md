@@ -77,3 +77,22 @@ and the worker source pinned to `feat/standalone-reliability-model-cache`
 
 The Quick Tunnel hostname is not recorded: it expired with the session.
 
+## Live session 3 — 2026-10-25 (readiness reload fix, hybrid routing)
+
+The notebook from this branch was imported again (data sources and secret kept; the
+Secrets panel did not list the secret, but the kernel retrieved it and its fingerprint
+matched the client copy). Run All installed and downloaded the model in ≈ 6 min.
+Cell 9 failed once inside Kaggle with `ConnectError: [Errno 101] Network is
+unreachable` even though `start_tunnel.sh` had already verified public inference; the
+cell now retries transient transport errors.
+
+| Check | Result |
+|---|---|
+| Model placement | `qwen3-coder:30b`, 19 GB, 100% GPU, 8192; GPU0 9,853 MiB, GPU1 9,323 MiB; disk 2.2 GB free |
+| External auth | `/healthz` 200; no key / wrong key 401; `/v1/models` 200; `/readyz` verified |
+| **Readiness-induced reload (before `4cd8731`)** | `/readyz` after the 30 s cache: **47.17 s**; next 8,192-context request: **43.05 s** (probe used `num_ctx` 2048, so Ollama reloaded the model twice) |
+| After `4cd8731` (applied live: fetch + `scripts/restart_proxy.sh`, tunnel unchanged) | `/readyz` **0.43 s**; next request **0.29 s**; warm 0.19–0.48 s |
+| LinkedIn Intelligence live hybrid test (owner API + `ctx.llm()`) | 3/3: endpoint verified and saved; public triage 2.9 s and analysis 4.3 s on the worker ($0); failover to Claude Haiku when the session URL was gone |
+| Real expired tunnel after stopping the session | Cloudflare 530 → one recorded failed attempt → Claude answered; next call skipped the worker (back-off) |
+| `scripts/status.sh` | `OVERALL STATUS: READY`; session stopped afterwards |
+
