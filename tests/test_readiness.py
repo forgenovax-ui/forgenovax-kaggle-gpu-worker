@@ -18,6 +18,8 @@ def test_readiness_requires_auth_and_real_sentinel_inference() -> None:
         payload = json.loads(request.content)
         assert payload["think"] is False
         assert payload["options"]["num_predict"] == 128
+        # Same context as served requests, so a readiness probe never forces a model reload.
+        assert payload["options"]["num_ctx"] == 8192
         calls += 1
         return httpx.Response(
             200,

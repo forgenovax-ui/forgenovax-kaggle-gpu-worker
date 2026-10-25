@@ -205,7 +205,11 @@ def create_app(
                     "keep_alive": runtime_settings.ollama_keep_alive,
                     "options": {
                         "temperature": 0,
-                        "num_ctx": min(runtime_settings.context_length, 2048),
+                        # Same context as served requests: Ollama reloads a model when
+                        # num_ctx changes, and a smaller probe context made every
+                        # readiness check and the next real request each reload the
+                        # 30B model (measured 47 s + 43 s on T4 x2).
+                        "num_ctx": runtime_settings.context_length,
                         # gpt-oss may emit a short thinking trace even when
                         # think=false. Keep enough bounded budget for the
                         # sentinel to reach the content field.
