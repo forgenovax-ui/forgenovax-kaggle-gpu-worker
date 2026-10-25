@@ -8,10 +8,12 @@ No API token or Kaggle credentials are needed.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 from uuid import uuid4
@@ -19,6 +21,7 @@ from uuid import uuid4
 FORMAT = "forgenovax-ollama-cache-v1"
 MANIFEST = "model-cache.json"
 CONTENT_DIR = "ollama-models"
+DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _files(directory: Path) -> list[dict[str, object]]:
@@ -46,6 +49,47 @@ def _validate_layout(directory: Path) -> None:
         raise ValueError("Expected an Ollama model store with blobs/ and manifests/")
     if not _files(directory):
         raise ValueError("Model store is empty")
+    _validate_manifest_references(directory)
+
+
+def _validate_manifest_references(directory: Path) -> list[str]:
+    """Ensure every Ollama manifest is parseable and references present blobs."""
+
+    manifest_root = directory / "manifests"
+    manifest_paths: list[str] = []
+    for path in sorted(manifest_root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(manifest_root).as_posix()
+        manifest_paths.append(relative)
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Ollama manifest is malformed: {relative}") from exc
+        if not isinstance(value, dict) or value.get("schemaVersion") != 2:
+            raise ValueError(f"Unsupported Ollama manifest: {relative}")
+        references: list[object] = []
+        config = value.get("config")
+        if isinstance(config, dict):
+            references.append(config.get("digest"))
+        layers = value.get("layers", [])
+        if layers is not None and not isinstance(layers, list):
+            raise ValueError(f"Ollama manifest layers are malformed: {relative}")
+        for layer in layers or []:
+            if not isinstance(layer, dict):
+                raise ValueError(f"Ollama manifest layer is malformed: {relative}")
+            references.append(layer.get("digest"))
+        for reference in references:
+            if not isinstance(reference, str) or not DIGEST.fullmatch(reference):
+                raise ValueError(f"Ollama manifest digest is malformed: {relative}")
+            blob = directory / "blobs" / reference.replace(":", "-", 1)
+            if not blob.is_file() or blob.is_symlink():
+                raise ValueError(
+                    f"Ollama manifest references a missing or unsafe blob: {reference}"
+                )
+    if not manifest_paths:
+        raise ValueError("Model store contains no Ollama manifests")
+    return manifest_paths
 
 
 def verify_cache(cache: Path) -> dict[str, object]:
@@ -61,6 +105,10 @@ def verify_cache(cache: Path) -> dict[str, object]:
     actual = _files(directory)
     if actual != manifest.get("files"):
         raise ValueError("Cache checksum, file count or file size mismatch")
+    manifest_paths = _validate_manifest_references(directory)
+    recorded_paths = manifest.get("ollama_manifests")
+    if recorded_paths is not None and recorded_paths != manifest_paths:
+        raise ValueError("Cache Ollama manifest inventory mismatch")
     return manifest
 
 
@@ -78,8 +126,10 @@ def export_cache(source: Path, output: Path) -> dict[str, object]:
         files = _files(output / CONTENT_DIR)
         manifest: dict[str, object] = {
             "format": FORMAT,
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "files": files,
             "total_bytes": sum(int(f["bytes"]) for f in files),
+            "ollama_manifests": _validate_manifest_references(output / CONTENT_DIR),
         }
         (output / MANIFEST).write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",

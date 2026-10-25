@@ -22,6 +22,8 @@ jobs:
         run: python -m pip install -r requirements.txt nbformat
       - name: Unit and integration-mock tests
         run: python -m pytest -q
+      - name: Validate evaluation fixture
+        run: python -c "from src.research_evaluation import load_cases; assert load_cases()"
       - name: Shell syntax
         run: bash -n scripts/*.sh
       - name: Notebook JSON and Python syntax

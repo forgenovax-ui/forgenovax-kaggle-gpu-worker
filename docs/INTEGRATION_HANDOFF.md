@@ -1,0 +1,38 @@
+# External model-router handoff
+
+This contract is ready for a future Claude/Ollama router without adding router
+or LinkedIn application code to this repository.
+
+## Endpoint contract
+
+- Base URL: the session-specific Cloudflare URL ending in `/v1`
+- Authentication: `Authorization: Bearer <FORGENOVAX_API_KEY>`
+- Model identifiers: `qwen3:14b`, `gpt-oss:20b`, `qwen3-coder:30b`
+- Discovery: authenticated `GET /v1/models`
+- Inference: authenticated `POST /v1/chat/completions`
+- Liveness: public `GET /healthz` (gateway process only)
+- Readiness: authenticated `GET /readyz` (real model inference)
+
+The router must treat a 200 from `/healthz` as insufficient. Route work only
+after `/readyz` returns `ready: true`, the expected `model`, and
+`inference: verified`.
+
+## Structured requests
+
+Use `stream: false` with either `response_format.type=json_object` or
+`response_format.type=json_schema`. For JSON Schema, include
+`response_format.json_schema.schema`. The gateway independently parses and
+validates assistant content before returning success. Invalid content returns a
+sanitized OpenAI-shaped 502 error.
+
+## Retries and session recovery
+
+- Retry 503/504 only when the caller's operation is idempotent or carries its
+  own operation identifier. Do not automatically duplicate side-effecting work.
+- Use bounded exponential backoff and recheck `/readyz` after a disconnect.
+- A restarted Kaggle session receives a new Quick Tunnel hostname; rediscover
+  and update the base URL rather than retrying a stale hostname indefinitely.
+- A cached model store and notebook files do not make process state or tunnel
+  URLs persistent.
+- Never send browser cookies, private messages, account credentials, or other
+  sensitive account data to this public-data research worker.

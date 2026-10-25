@@ -20,7 +20,17 @@ The notebook automates this sequence and stops on the first failed gate.
 ./scripts/status.sh
 ```
 
-This checks the NVIDIA runtime and both GPU indices, Ollama API, model installation/loading, proxy, authentication rejection, authorized model listing, cloudflared process, public health, and the authenticated public API. Only all-live checks produce `OVERALL STATUS: READY`.
+This checks the NVIDIA runtime and both GPU indices, Ollama API, model
+installation/loading, measured VRAM placement and CPU offload, proxy,
+authentication rejection, authenticated local inference readiness,
+cloudflared, public liveness, and authenticated public inference readiness.
+Per-GPU process-memory rows are reported as `UNVERIFIED` unless measured and do
+not silently claim both devices are used. Only required live checks produce
+`OVERALL STATUS: READY`.
+
+Use `python3 -m src.gpu_diagnostics` for the machine-readable inventory and
+placement snapshot. Use `python3 -m src.benchmark --cold-start
+--measure-first-token` for sampled in-flight evidence.
 
 ## Logs
 

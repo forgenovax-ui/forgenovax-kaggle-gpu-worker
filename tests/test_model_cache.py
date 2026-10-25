@@ -1,4 +1,7 @@
 from pathlib import Path
+from hashlib import sha256
+import json
+import shutil
 
 import pytest
 
@@ -74,3 +77,34 @@ def test_no_snapshot_overwrite(tmp_path: Path) -> None:
     export_cache(source, snapshot)
     with pytest.raises(FileExistsError, match="overwrite"):
         export_cache(source, snapshot)
+
+
+def test_manifest_with_missing_referenced_blob_is_rejected(tmp_path: Path) -> None:
+    store = sample_store(tmp_path)
+    digest = sha256(b"missing model layer").hexdigest()
+    manifest = store / "manifests" / "registry.ollama.ai" / "library" / "tiny" / "latest"
+    manifest.write_text(json.dumps({
+        "schemaVersion": 2,
+        "layers": [{"digest": f"sha256:{digest}"}],
+    }))
+    with pytest.raises(ValueError, match="missing or unsafe blob"):
+        export_cache(store, tmp_path / "export")
+
+
+def test_interrupted_restore_cleans_staging_without_target(
+    tmp_path: Path, monkeypatch
+) -> None:
+    snapshot = tmp_path / "export"
+    export_cache(sample_store(tmp_path), snapshot)
+    target = tmp_path / "target"
+
+    def interrupted_copytree(source: Path, destination: Path) -> None:
+        destination.mkdir(parents=True)
+        (destination / "partial").write_text("incomplete")
+        raise OSError("simulated interruption")
+
+    monkeypatch.setattr(shutil, "copytree", interrupted_copytree)
+    with pytest.raises(OSError, match="interruption"):
+        restore_cache(snapshot, target)
+    assert not target.exists()
+    assert not list(tmp_path.glob(".target.restore-*"))

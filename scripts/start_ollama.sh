@@ -28,10 +28,29 @@ if [[ "${OLLAMA_HOST}" != "127.0.0.1:11434" ]]; then
 fi
 
 if command -v nvidia-smi >/dev/null 2>&1; then
-  GPU_COUNT="$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l | tr -d ' ')"
-  if [[ "${GPU_COUNT}" -ge 2 ]]; then
-    export CUDA_VISIBLE_DEVICES="0,1"
+  gpu_indices="$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits 2>/dev/null | tr -d ' ' | paste -sd, -)"
+else
+  gpu_indices=""
+fi
+if [[ -z "$gpu_indices" ]] && [[ "${FORGENOVAX_REQUIRE_GPU:-1}" == "1" ]]; then
+  echo "GPU acceleration unavailable: nvidia-smi did not report any devices" >&2
+  exit 1
+fi
+requested_devices="${FORGENOVAX_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-$gpu_indices}}"
+if [[ -n "$requested_devices" ]]; then
+  if [[ ! "$requested_devices" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+    echo "FORGENOVAX_CUDA_VISIBLE_DEVICES must be comma-separated GPU indexes" >&2
+    exit 64
   fi
+  IFS=',' read -r -a requested_array <<< "$requested_devices"
+  for requested in "${requested_array[@]}"; do
+    if ! tr ',' '\n' <<< "$gpu_indices" | grep -Fxq "$requested"; then
+      echo "Requested GPU $requested is not visible; detected indexes: ${gpu_indices:-none}" >&2
+      exit 1
+    fi
+  done
+  export CUDA_VISIBLE_DEVICES="$requested_devices"
+  echo "Ollama CUDA visibility: $CUDA_VISIBLE_DEVICES (separate GPU memory devices)"
 fi
 
 mkdir -p "${WORK_DIR}"
@@ -39,6 +58,7 @@ if curl -fsS "http://${OLLAMA_HOST}/api/tags" >/dev/null 2>&1; then
   echo "Ollama is already ready at http://${OLLAMA_HOST}"
   exit 0
 fi
+rm -f "${PID_FILE}"
 
 nohup ollama serve >"${LOG_FILE}" 2>&1 &
 OLLAMA_PID=$!

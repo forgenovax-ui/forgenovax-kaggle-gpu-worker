@@ -64,7 +64,8 @@ signature. Attach only datasets you own and trust.
 After Ollama starts and the model is installed:
 
 ```bash
-python3 -m src.benchmark --model qwen3:14b --context 8192 --runs 3
+python3 -m src.benchmark --model qwen3:14b --context 8192 --runs 3 \
+  --cold-start --measure-first-token
 ```
 
 Or set `FORGENOVAX_RUN_BENCHMARK=1` before the notebook's optional
@@ -73,8 +74,9 @@ benchmark cell. Reports are written to
 
 The benchmark uses synthetic business discussion text (no private LinkedIn
 data). Each report includes actual Ollama duration/token counts, throughput,
-wall time, and GPU memory/utilization snapshots from nvidia-smi. A GPU name
-or device count alone is **not** proof the model is running on both devices.
+first-token latency, wall time, sampled GPU memory/utilization, Ollama CPU use,
+and measured model VRAM placement. A GPU name or device count alone is **not**
+proof the model is running on both devices.
 Confirm actual memory allocation with `ollama ps` and `nvidia-smi`.
 
 For a fair comparison, use the **same prompt**, context length, token limit,

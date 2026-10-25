@@ -10,7 +10,18 @@ Approved client
   → configured model on the visible Kaggle GPU devices
 ```
 
-The gateway is a deliberately small trust boundary. `/healthz` returns only a boolean and service name. Every route under `/v1/` authenticates first, removes the public authorization header, forwards the original body to Ollama, strips hop-by-hop headers, and preserves the upstream status and response body.
+The gateway is a deliberately small trust boundary. `/healthz` returns only a
+boolean and service name and means **liveness only**. Authenticated `/readyz`
+performs a short deterministic inference with the configured model and caches a
+successful result briefly. Every route under `/v1/` authenticates first,
+removes the public authorization header, applies configured body limits,
+forwards the original body to Ollama, and strips hop-by-hop headers.
+
+For non-streaming requests with `response_format`, the gateway parses assistant
+content as JSON and validates it against the caller's JSON Schema before
+returning success. Model output remains untrusted even when Ollama reports HTTP
+200. Streaming structured responses are rejected because the complete object
+cannot be validated before success.
 
 ## Components
 

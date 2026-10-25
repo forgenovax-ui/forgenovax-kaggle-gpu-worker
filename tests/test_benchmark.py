@@ -5,6 +5,8 @@ from src import benchmark
 
 
 def fake_generate(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/api/ps":
+        return httpx.Response(200, json={"models": []})
     assert request.url.path == "/api/generate"
     data = __import__("json").loads(request.content)
     assert data["stream"] is False
@@ -36,6 +38,7 @@ def test_benchmark_computes_real_reported_token_rates(monkeypatch) -> None:
     assert result["runs"][0]["prompt_tokens_per_second"] == 20.0
     assert result["runs"][0]["total_seconds"] == 3.0
     assert result["gpu_after"]["available"] is True
+    assert "runtime_monitor" in result
 
 
 def test_incomplete_ollama_metrics_fail_instead_of_guessing() -> None:

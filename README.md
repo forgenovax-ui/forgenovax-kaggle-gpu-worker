@@ -8,6 +8,10 @@ The worker now has mutually exclusive `MODE=inference` and `MODE=training` dispa
 
 The default model is `qwen3-coder:30b`. Only the selected model is downloaded.
 
+Live research-model selection is measurement-gated. The default remains
+unchanged until all supported models complete the same schema/quality/performance
+evaluation; see [model evaluation](docs/MODEL_EVALUATION.md).
+
 ## Architecture
 
 ```text
@@ -65,6 +69,14 @@ Ollama performance counters and nvidia-smi GPU evidence.
 Start with **[Standalone optimization](docs/STANDALONE_OPTIMIZATION.md)**.
 The new features live exclusively in this Kaggle worker repository; they
 do not modify or deploy LinkedIn Intelligence.
+
+Audit and handoff records:
+
+- [Engineering audit](docs/ENGINEERING_AUDIT.md)
+- [GPU optimization report](docs/GPU_OPTIMIZATION_REPORT.md)
+- [Model evaluation](docs/MODEL_EVALUATION.md)
+- [External router handoff](docs/INTEGRATION_HANDOFF.md)
+- [Test report](docs/TEST_REPORT.md)
 
 ## Kaggle Setup
 
@@ -161,6 +173,7 @@ Read [docs/SECURITY.md](docs/SECURITY.md) before use. Key properties:
 - Ollama and FastAPI bind only to loopback.
 - all `/v1/*` routes require a bearer token;
 - `/healthz` is public but contains no secrets;
+- `/readyz` requires authentication and performs a real model inference;
 - the Cloudflare tunnel targets port 8000, never port 11434;
 - actual credentials are never committed or included in access logs.
 

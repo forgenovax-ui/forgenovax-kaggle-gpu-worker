@@ -19,6 +19,11 @@ from typing import Any
 import httpx
 
 from src.config import Settings
+from src.gpu_diagnostics import (
+    RuntimeMonitor,
+    gpu_inventory as measured_gpu_inventory,
+    ollama_placement,
+)
 
 
 PROMPT = (
@@ -32,41 +37,17 @@ PROMPT = (
 
 
 def gpu_inventory() -> dict[str, object]:
-    try:
-        r = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,name,memory.used,memory.total,utilization.gpu",
-             "--format=csv,noheader,nounits"],
-            check=True, capture_output=True, text=True, timeout=15,
-        )
-    except (FileNotFoundError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return {"available": False, "devices": []}
-    devices = []
-    for line in r.stdout.splitlines():
-        fields = [part.strip() for part in line.split(",")]
-        if len(fields) == 5:
-            devices.append(dict(zip(
-                ("index", "name", "memory_used_mib", "memory_total_mib", "utilization_percent"),
-                fields,
-            )))
-    return {"available": bool(devices), "devices": devices}
+    """Compatibility wrapper around the richer measured GPU inventory."""
+
+    return measured_gpu_inventory()
 
 
 def _rate(tokens: int, duration_ns: int) -> float | None:
     return round(tokens * 1e9 / duration_ns, 2) if tokens > 0 and duration_ns > 0 else None
 
 
-def one_run(client: httpx.Client, *, model: str, context: int, num_predict: int) -> dict[str, object]:
-    started = time.monotonic()
-    response = client.post("/api/generate", json={
-        "model": model,
-        "prompt": PROMPT,
-        "stream": False,
-        "think": False,
-        "options": {"num_ctx": context, "num_predict": num_predict, "temperature": 0},
-    })
-    response.raise_for_status()
-    result: Any = response.json()
-    if not isinstance(result, dict) or not result.get("done") or not isinstance(result.get("response"), str):
+def _result(started: float, result: dict[str, Any], first_token: float | None) -> dict[str, object]:
+    if not result.get("done") or not isinstance(result.get("response"), str):
         raise ValueError("Ollama returned an incomplete response")
     if not result["response"].strip():
         raise ValueError("Ollama generated empty output")
@@ -80,6 +61,7 @@ def one_run(client: httpx.Client, *, model: str, context: int, num_predict: int)
         metrics[name] = value
     return {
         "wall_seconds": round(time.monotonic() - started, 3),
+        "first_token_latency_seconds": round(first_token, 3) if first_token is not None else None,
         "total_seconds": round(metrics["total_duration"] / 1e9, 3),
         "load_seconds": round(metrics["load_duration"] / 1e9, 3),
         "prompt_tokens": metrics["prompt_eval_count"],
@@ -89,16 +71,86 @@ def one_run(client: httpx.Client, *, model: str, context: int, num_predict: int)
     }
 
 
+def one_run(client: httpx.Client, *, model: str, context: int, num_predict: int,
+            measure_first_token: bool = False) -> dict[str, object]:
+    started = time.monotonic()
+    request = {
+        "model": model,
+        "prompt": PROMPT,
+        "stream": measure_first_token,
+        "think": False,
+        "options": {"num_ctx": context, "num_predict": num_predict, "temperature": 0},
+    }
+    if measure_first_token:
+        parts: list[str] = []
+        final: dict[str, Any] | None = None
+        first_token: float | None = None
+        with client.stream("POST", "/api/generate", json=request) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                item = json.loads(line)
+                if not isinstance(item, dict):
+                    raise ValueError("Ollama returned a non-object stream event")
+                fragment = item.get("response")
+                if isinstance(fragment, str) and fragment:
+                    if first_token is None:
+                        first_token = time.monotonic() - started
+                    parts.append(fragment)
+                if item.get("done") is True:
+                    final = item
+        if final is None:
+            raise ValueError("Ollama stream ended without final metrics")
+        final["response"] = "".join(parts)
+        return _result(started, final, first_token)
+
+    response = client.post("/api/generate", json=request)
+    response.raise_for_status()
+    result: Any = response.json()
+    if not isinstance(result, dict):
+        raise ValueError("Ollama returned a non-object response")
+    return _result(started, result, None)
+
+
+def unload_model(client: httpx.Client, model: str) -> None:
+    response = client.post(
+        "/api/generate",
+        json={"model": model, "prompt": "", "stream": False, "keep_alive": 0},
+    )
+    response.raise_for_status()
+
+
 def run_benchmark(client: httpx.Client, *, model: str, context: int,
-                  num_predict: int, warmups: int, runs: int) -> dict[str, object]:
+                  num_predict: int, warmups: int, runs: int,
+                  cold_start: bool = False,
+                  measure_first_token: bool = False) -> dict[str, object]:
     if min(context, num_predict, runs) < 1 or warmups < 0 or runs > 30 or warmups > 10:
         raise ValueError("Require positive context/tokens, 1-30 runs and 0-10 warmups")
     before = gpu_inventory()
-    for _ in range(warmups):
-        one_run(client, model=model, context=context, num_predict=num_predict)
-    values = [one_run(client, model=model, context=context, num_predict=num_predict)
-              for _ in range(runs)]
+    placement_before = ollama_placement(client)
+    cold_value = None
+    with RuntimeMonitor() as monitor:
+        if cold_start:
+            unload_model(client, model)
+            cold_value = one_run(
+                client, model=model, context=context, num_predict=num_predict,
+                measure_first_token=measure_first_token,
+            )
+        for _ in range(warmups):
+            one_run(
+                client, model=model, context=context, num_predict=num_predict,
+                measure_first_token=measure_first_token,
+            )
+        values = [
+            one_run(
+                client, model=model, context=context, num_predict=num_predict,
+                measure_first_token=measure_first_token,
+            )
+            for _ in range(runs)
+        ]
     after = gpu_inventory()
+    placement_after = ollama_placement(client)
     speeds = [float(v["generation_tokens_per_second"])
               for v in values if v["generation_tokens_per_second"] is not None]
     return {
@@ -108,11 +160,15 @@ def run_benchmark(client: httpx.Client, *, model: str, context: int,
         "context_length": context,
         "max_output_tokens": num_predict,
         "warmups": warmups,
+        "cold_start": cold_value,
         "runs": values,
         "median_generation_tokens_per_second": round(statistics.median(speeds), 2) if speeds else None,
         "median_wall_seconds": round(statistics.median(float(v["wall_seconds"]) for v in values), 3),
         "gpu_before": before,
         "gpu_after": after,
+        "runtime_monitor": monitor.summary(),
+        "ollama_placement_before": placement_before,
+        "ollama_placement_after": placement_after,
     }
 
 
@@ -123,13 +179,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-output-tokens", type=int, default=128)
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument("--cold-start", action="store_true")
+    parser.add_argument("--measure-first-token", action="store_true")
     parser.add_argument("--output-dir", default=os.getenv("FORGENOVAX_WORK_DIR", "/kaggle/working") + "/benchmarks")
     args = parser.parse_args(argv)
     try:
         config = Settings.from_env()
         with httpx.Client(base_url=config.ollama_base_url, timeout=httpx.Timeout(900)) as client:
             result = run_benchmark(client, model=args.model, context=args.context,
-                num_predict=args.max_output_tokens, warmups=args.warmups, runs=args.runs)
+                num_predict=args.max_output_tokens, warmups=args.warmups, runs=args.runs,
+                cold_start=args.cold_start, measure_first_token=args.measure_first_token)
         target_dir = Path(args.output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / ("benchmark-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + ".json")

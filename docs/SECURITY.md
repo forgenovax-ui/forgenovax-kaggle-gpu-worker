@@ -32,7 +32,13 @@ It must not be used for Nova Voice production traffic, live trading execution, p
 - **Secret disclosure in source:** real `.env` files, runtime files, logs, and PIDs are ignored; examples use placeholders.
 - **Secret disclosure in access logs:** uvicorn access logging is disabled. Diagnostics redact bearer/header/key-shaped values.
 - **Upstream error leakage:** connection errors are converted to generic gateway responses.
+- **Memory exhaustion:** request and buffered response sizes have configurable hard limits.
+- **Untrusted model JSON:** non-streaming structured output is independently parsed and schema-validated before success.
 - **Stale endpoint use:** Quick Tunnel URLs and processes disappear with the Kaggle runtime; clients must not treat them as stable.
+
+`/readyz` is authenticated because it consumes model/GPU work. `/healthz` is
+public and minimal so tunnel liveness can be diagnosed without exposing model,
+process, GPU, or credential detail.
 
 Bearer authentication protects access but does not add per-user authorization, quotas, revocation lists, or audit identities. Anyone holding the current key has worker access. Use a long random key, share it through an approved secret channel, rotate it by restarting the proxy with a new value, and never paste it into source or a committed notebook.
 
