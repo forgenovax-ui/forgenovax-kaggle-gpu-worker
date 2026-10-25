@@ -385,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
                         ollama,
                         model=model,
                         context=context,
-                        num_predict=128,
+                        num_predict=512,
                         warmups=0,
                         runs=args.runs,
                         cold_start=True,

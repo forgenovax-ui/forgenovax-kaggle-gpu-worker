@@ -176,7 +176,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=os.getenv("MODEL", "qwen3-coder:30b"))
     parser.add_argument("--context", type=int, default=8192)
-    parser.add_argument("--max-output-tokens", type=int, default=128)
+    # Reasoning models can consume an initial token budget without emitting
+    # user-visible content. 512 remains bounded while permitting task completion.
+    parser.add_argument("--max-output-tokens", type=int, default=512)
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--cold-start", action="store_true")
